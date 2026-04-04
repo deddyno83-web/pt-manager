@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/pt-manager/static/css/main.ff7b6c4f.css",
+    "main.js": "/pt-manager/static/js/main.884412de.js",
+    "index.html": "/pt-manager/index.html",
+    "main.ff7b6c4f.css.map": "/pt-manager/static/css/main.ff7b6c4f.css.map",
+    "main.884412de.js.map": "/pt-manager/static/js/main.884412de.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.ff7b6c4f.css",
+    "static/js/main.884412de.js"
+  ]
+}
