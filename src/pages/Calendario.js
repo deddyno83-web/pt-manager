@@ -3,7 +3,6 @@ import React, { useState, useMemo } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { useClients } from '../hooks/useClients';
-import { getPackageQueue } from '../utils/packageUtils';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
 import { format, isSameDay } from 'date-fns';
@@ -21,81 +20,52 @@ export default function Calendario() {
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [form, setForm] = useState({
-    clientId: '',
-    date: new Date().toISOString().split('T')[0],
-    time: '09:00',
-    note: '',
-  });
+  const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', note: '' });
 
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 4000);
-  };
+  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
 
-  // Get appointments for selected date
   const dayAppointments = useMemo(() =>
     appointments.filter(a => isSameDay(new Date(a.date), selectedDate))
       .sort((a, b) => new Date(a.date) - new Date(b.date)),
     [appointments, selectedDate]
   );
 
-  // Dates that have appointments (for calendar dots)
   const datesWithAppointments = useMemo(() =>
     new Set(appointments.map(a => format(new Date(a.date), 'yyyy-MM-dd'))),
     [appointments]
   );
 
-  const getLessonsRemaining = (clientId) => {
+  const getClientQueue = (clientId) => {
     const client = clients.find(c => c.id === clientId);
     if (!client || client.type === 'corso') return null;
-    const queue = getPackageQueue(client, appointments);
-    return queue ? queue.totalRemaining : null;
+    return getPackageQueue(client, appointments);
   };
 
   const openModal = () => {
-    setForm({
-      clientId: '',
-      date: format(selectedDate, 'yyyy-MM-dd'),
-      time: '09:00',
-      note: '',
-    });
+    setForm({ clientId: '', date: format(selectedDate, 'yyyy-MM-dd'), time: '09:00', note: '' });
     setShowModal(true);
   };
 
   const handleBook = async () => {
     if (!form.clientId) return showToast('Seleziona un cliente', 'error');
-
     const client = clients.find(c => c.id === form.clientId);
-    const remaining = getLessonsRemaining(form.clientId);
+    const q = getClientQueue(form.clientId);
 
-    // Check remaining lessons for individual clients
-    if (client?.type === 'individuale' && remaining !== null && remaining <= 0) {
-      return showToast(`⚠️ ${client.nome} ha esaurito tutte le lezioni! Aggiungi un nuovo pacchetto.`, 'error');
+    if (q && q.allExhausted) {
+      return showToast(`${client.nome} ha esaurito tutte le lezioni! Aggiungi un pacchetto.`, 'error');
     }
 
     const dateTime = new Date(`${form.date}T${form.time}:00`);
+    await addAppointment({ clientId: form.clientId, date: dateTime.toISOString(), note: form.note });
 
-    await addAppointment({
-      clientId: form.clientId,
-      date: dateTime.toISOString(),
-      note: form.note,
-      deducted: client?.type === 'individuale',
-    });
-
-    // Show warning if this was the last lesson
-    if (client?.type === 'individuale' && remaining !== null) {
-      if (remaining === 1) {
-        showToast(`✅ Lezione prenotata! ⚠️ Era l'ULTIMA lezione di ${client.nome} - Rinnovare il pacchetto!`, 'warning');
-      } else if (remaining === 2) {
-        showToast(`✅ Lezione prenotata! ⚠️ ${client.nome} ha ancora solo ${remaining - 1} lezione rimasta`, 'warning');
-      } else {
-        showToast(`✅ Lezione prenotata! Rimaste: ${remaining - 1}`);
-      }
+    if (q) {
+      const newRemaining = q.totalRemaining - 1;
+      if (newRemaining === 0) showToast(`Lezione prenotata! ⚠️ ${client.nome} ha esaurito il pacchetto — aggiungine uno nuovo!`, 'warning');
+      else if (newRemaining <= 2) showToast(`Lezione prenotata! ⚠️ ${client.nome} ha ancora ${newRemaining} lezione${newRemaining !== 1 ? 'i' : ''} rimasta`, 'warning');
+      else showToast(`Lezione prenotata! Rimaste: ${newRemaining}`);
     } else {
-      showToast('✅ Appuntamento aggiunto!');
+      showToast('Appuntamento aggiunto!');
     }
-
     setShowModal(false);
   };
 
@@ -106,88 +76,71 @@ export default function Calendario() {
   };
 
   const tileContent = ({ date }) => {
-    const key = format(date, 'yyyy-MM-dd');
-    if (datesWithAppointments.has(key)) {
+    if (datesWithAppointments.has(format(date, 'yyyy-MM-dd'))) {
       return <div className="has-appointment" />;
     }
     return null;
   };
 
   const selectedClientData = clients.find(c => c.id === form.clientId);
-  const selectedRemaining = form.clientId ? getLessonsRemaining(form.clientId) : null;
+  const selectedQueue = form.clientId ? getClientQueue(form.clientId) : null;
+
+  const now = new Date();
+  const monthApts = appointments.filter(a => {
+    const d = new Date(a.date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const upcomingWeek = appointments
+    .filter(a => { const d = new Date(a.date); return d >= now && d <= new Date(Date.now() + 7 * 86400000); })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   return (
     <div>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
       <div className="page-header">
-        <h2>CALENDARIO</h2>
+        <h2>Calendario</h2>
         <p>Gestisci gli appuntamenti e le lezioni</p>
       </div>
 
       <div className="grid-2" style={{ alignItems: 'start' }}>
-        {/* Calendar */}
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div className="calendar-wrapper">
-            <Calendar
-              onChange={setSelectedDate}
-              value={selectedDate}
-              tileContent={tileContent}
-              locale="it-IT"
-            />
+            <Calendar onChange={setSelectedDate} value={selectedDate} tileContent={tileContent} locale="it-IT" />
           </div>
 
-          {/* Day appointments list */}
-          <div className="card" style={{ marginTop: 16 }}>
+          <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h3 style={{ fontSize: 20 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
                   {format(selectedDate, "EEE d MMM", { locale: it })}
-                </h3>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {dayAppointments.length} appuntament{dayAppointments.length !== 1 ? 'i' : 'o'}
                 </div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{dayAppointments.length} appuntament{dayAppointments.length !== 1 ? 'i' : 'o'}</div>
               </div>
-              <button className="btn btn-primary btn-sm" onClick={openModal}>
-                + Prenota
-              </button>
+              <button className="btn btn-primary btn-sm" onClick={openModal}>+ Prenota</button>
             </div>
-
             {dayAppointments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-dim)', fontSize: 14 }}>
-                Nessun appuntamento per questo giorno
-              </div>
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>Nessun appuntamento per questo giorno</div>
             ) : (
               dayAppointments.map(apt => {
                 const client = clients.find(c => c.id === apt.clientId);
-                const remaining = getLessonsRemaining(apt.clientId);
+                const q = getClientQueue(apt.clientId);
                 return (
-                  <div key={apt.id} style={{ position: 'relative' }}>
+                  <div key={apt.id}>
                     <div className="appointment-item">
-                      <div className="apt-time">
-                        {format(new Date(apt.date), 'HH:mm')}
-                      </div>
-                      <div className="apt-info">
-                        <div className="apt-client">
-                          {client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}
-                        </div>
+                      <div className="apt-time">{format(new Date(apt.date), 'HH:mm')}</div>
+                      <div style={{ flex: 1 }}>
+                        <div className="apt-name">{client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}</div>
                         <div className="apt-detail">
-                          {client?.type === 'individuale' && remaining !== null && (
-                            <span style={{ color: remaining <= 1 ? 'var(--red)' : remaining <= 3 ? 'var(--yellow)' : 'var(--text-muted)' }}>
-                              {remaining >= 0 ? `${remaining} lezioni rimaste` : 'Pacchetto scaduto'}
-                            </span>
-                          )}
-                          {apt.note && <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>· {apt.note}</span>}
+                          {q && <span style={{ color: q.allExhausted ? 'var(--red)' : q.isExpiring ? 'var(--amber)' : 'var(--text-3)' }}>
+                            {q.totalRemaining} lezioni rimaste
+                          </span>}
+                          {apt.note && <span style={{ color: 'var(--text-3)' }}>{q ? ' · ' : ''}{apt.note}</span>}
                         </div>
                       </div>
-                      <button
-                        style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: 6, borderRadius: 6, fontSize: 16 }}
-                        onClick={() => setConfirmDel(apt.id)}
-                      >
-                        🗑
-                      </button>
+                      <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14, transition: 'color 0.12s' }}
+                        onClick={() => setConfirmDel(apt.id)} title="Elimina">✕</button>
                     </div>
-
                     {confirmDel === apt.id && (
                       <div className="alert alert-danger" style={{ marginBottom: 8, fontSize: 12 }}>
                         Eliminare questo appuntamento?
@@ -204,146 +157,102 @@ export default function Calendario() {
           </div>
         </div>
 
-        {/* This month stats */}
-        <div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <h3 style={{ fontSize: 20, marginBottom: 16 }}>QUESTO MESE</h3>
-            {(() => {
-              const now = new Date();
-              const monthApts = appointments.filter(a => {
-                const d = new Date(a.date);
-                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-              });
-              return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: 14 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>LEZIONI</div>
-                    <div style={{ fontFamily: 'Bebas Neue', fontSize: 30, color: 'var(--accent)' }}>{monthApts.length}</div>
-                  </div>
-                  <div style={{ background: 'var(--surface2)', borderRadius: 8, padding: 14 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>CLIENTI ATTIVI</div>
-                    <div style={{ fontFamily: 'Bebas Neue', fontSize: 30, color: 'var(--blue)' }}>
-                      {new Set(monthApts.map(a => a.clientId)).size}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="card">
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Questo mese</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Lezioni</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.5px' }}>{monthApts.length}</div>
+              </div>
+              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Clienti visti</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.5px' }}>{new Set(monthApts.map(a => a.clientId)).size}</div>
+              </div>
+            </div>
           </div>
 
-          {/* Upcoming week */}
           <div className="card">
-            <h3 style={{ fontSize: 20, marginBottom: 16 }}>PROSSIMI 7 GIORNI</h3>
-            {(() => {
-              const from = new Date();
-              const to = new Date(Date.now() + 7 * 86400000);
-              const upcoming = appointments
-                .filter(a => {
-                  const d = new Date(a.date);
-                  return d >= from && d <= to;
-                })
-                .sort((a,b) => new Date(a.date) - new Date(b.date));
-
-              if (upcoming.length === 0) {
-                return <div style={{ fontSize: 13, color: 'var(--text-dim)', textAlign: 'center', padding: '20px 0' }}>Nessun appuntamento</div>;
-              }
-
-              return upcoming.map(apt => {
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Prossimi 7 giorni</div>
+            {upcomingWeek.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '16px 0' }}>Nessun appuntamento</div>
+            ) : (
+              upcomingWeek.map(apt => {
                 const client = clients.find(c => c.id === apt.clientId);
+                const q = getClientQueue(apt.clientId);
                 return (
                   <div key={apt.id} className="appointment-item">
                     <div style={{ minWidth: 48 }}>
-                      <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16, color: 'var(--accent)', lineHeight: 1, letterSpacing: '-0.3px' }}>
-                        {format(new Date(apt.date), 'HH:mm')}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                        {format(new Date(apt.date), 'EEE d', { locale: it })}
-                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.3px' }}>{format(new Date(apt.date), 'HH:mm')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{format(new Date(apt.date), 'EEE d', { locale: it })}</div>
                     </div>
-                    <div className="apt-info">
-                      <div className="apt-client" style={{ fontSize: 13 }}>
-                        {client ? `${client.nome} ${client.cognome}` : '—'}
-                      </div>
+                    <div style={{ flex: 1 }}>
+                      <div className="apt-name" style={{ fontSize: 13 }}>{client ? `${client.nome} ${client.cognome}` : '—'}</div>
                     </div>
+                    {q && q.isExpiring && (
+                      <span className={`badge ${q.allExhausted ? 'badge-red' : 'badge-yellow'}`}>
+                        {q.allExhausted ? 'Esaurito' : `${q.totalRemaining}`}
+                      </span>
+                    )}
                   </div>
                 );
-              });
-            })()}
+              })
+            )}
           </div>
         </div>
       </div>
 
-      {/* Book Appointment Modal */}
+      {/* BOOK MODAL */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="modal-header">
-              <h3>PRENOTA LEZIONE</h3>
+              <h3>Prenota lezione</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
 
             <div className="input-group">
               <label>Cliente *</label>
-              <select value={form.clientId} onChange={e => setForm({...form, clientId: e.target.value})}>
-                <option value="">-- Seleziona cliente --</option>
+              <select value={form.clientId} onChange={e => setForm({ ...form, clientId: e.target.value })}>
+                <option value="">— Seleziona cliente —</option>
                 {clients.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome} {c.cognome} {c.type === 'corso' ? '(Corso)' : ''}
-                  </option>
+                  <option key={c.id} value={c.id}>{c.nome} {c.cognome}{c.type === 'corso' ? ' (Corso)' : ''}</option>
                 ))}
               </select>
             </div>
 
-            {/* Warning if few lessons remaining */}
-            {selectedClientData?.type === 'individuale' && selectedRemaining !== null && (
-              <div className={`alert ${selectedRemaining <= 0 ? 'alert-danger' : selectedRemaining <= 2 ? 'alert-warning' : 'alert-success'}`} style={{ marginBottom: 16 }}>
-                {selectedRemaining <= 0
-                  ? '⛔ Pacchetto esaurito! Aggiungere un nuovo pacchetto prima di prenotare.'
-                  : selectedRemaining === 1
-                  ? `⚠️ Ultima lezione rimasta! Ricordati di rinnovare il pacchetto.`
-                  : selectedRemaining <= 2
-                  ? `⚠️ Solo ${selectedRemaining} lezioni rimaste nel pacchetto`
-                  : `✅ ${selectedRemaining} lezioni rimaste nel pacchetto`
-                }
+            {selectedClientData?.type === 'individuale' && selectedQueue && (
+              <div className={`alert ${selectedQueue.allExhausted ? 'alert-danger' : selectedQueue.isExpiring ? 'alert-warning' : 'alert-success'}`} style={{ marginBottom: 14 }}>
+                {selectedQueue.allExhausted
+                  ? 'Pacchetto esaurito! Aggiungere un nuovo pacchetto prima di prenotare.'
+                  : selectedQueue.totalRemaining === 1
+                  ? `Ultima lezione disponibile! Ricordati di rinnovare il pacchetto.`
+                  : selectedQueue.isExpiring
+                  ? `Solo ${selectedQueue.totalRemaining} lezioni rimaste nel pacchetto.`
+                  : `${selectedQueue.totalRemaining} lezioni disponibili.`}
               </div>
             )}
 
             <div style={{ display: 'flex', gap: 12 }}>
               <div className="input-group" style={{ flex: 2 }}>
                 <label>Data *</label>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={e => setForm({...form, date: e.target.value})}
-                />
+                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
               </div>
               <div className="input-group" style={{ flex: 1 }}>
                 <label>Ora *</label>
-                <input
-                  type="time"
-                  value={form.time}
-                  onChange={e => setForm({...form, time: e.target.value})}
-                />
+                <input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} />
               </div>
             </div>
 
             <div className="input-group">
               <label>Note</label>
-              <input
-                value={form.note}
-                onChange={e => setForm({...form, note: e.target.value})}
-                placeholder="es. Allenamento gambe, recupero..."
-              />
+              <input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="es. Gambe, upper body, cardio..." />
             </div>
 
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Annulla</button>
-              <button
-                className="btn btn-primary"
-                onClick={handleBook}
-                disabled={selectedRemaining !== null && selectedRemaining <= 0}
-              >
-                ✓ Prenota Lezione
+              <button className="btn btn-primary" onClick={handleBook} disabled={selectedQueue?.allExhausted}>
+                ✓ Prenota lezione
               </button>
             </div>
           </div>
