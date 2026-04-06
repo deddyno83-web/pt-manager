@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
+import { useSchede } from '../hooks/useSchede';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
 
@@ -24,6 +25,7 @@ function ProgressBar({ remaining, total }) {
 export default function Clienti() {
   const { clients, addClient, updateClient, deleteClient } = useClients();
   const { appointments } = useAppointments();
+  const { schede } = useSchede();
   const [showModal, setShowModal] = useState(false);
   const [editClient, setEditClient] = useState(null);
   const [showPkgModal, setShowPkgModal] = useState(false);
@@ -219,6 +221,50 @@ export default function Clienti() {
                   </button>
                 </div>
               )}
+
+              {/* Schede allenamento */}
+              {c.type === 'individuale' && (() => {
+                const schedeCliente = schede.filter(s => s.clienteId === c.id);
+                if (schedeCliente.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                      Schede allenamento ({schedeCliente.length})
+                    </div>
+                    {schedeCliente.map(s => {
+                      const oggi = new Date();
+                      const scaduta = s.dataFine && new Date(s.dataFine) < oggi;
+                      const inScadenza = s.dataFine && !scaduta && new Date(s.dataFine) < new Date(oggi.getTime() + 7*86400000);
+                      const giorniAttivi = Object.keys(s.giorni || {});
+                      const totFatti = giorniAttivi.reduce((sum, g) => sum + (s.giorni[g]?.filter(e => e.fatto)?.length || 0), 0);
+                      const totEsercizi = giorniAttivi.reduce((sum, g) => sum + (s.giorni[g]?.length || 0), 0);
+                      return (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: `1px solid ${scaduta ? 'var(--red-border)' : inScadenza ? 'var(--amber-border)' : 'var(--border)'}`, marginBottom: 8 }}>
+                          <div style={{ fontSize: 20 }}>📋</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{s.nome}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                              {giorniAttivi.length} giorni · {totEsercizi} esercizi
+                              {s.dataFine && ` · Scade: ${s.dataFine}`}
+                            </div>
+                            {totEsercizi > 0 && (
+                              <div style={{ marginTop: 5 }}>
+                                <div className="progress-bar">
+                                  <div className="progress-fill green" style={{ width: `${(totFatti/totEsercizi)*100}%` }} />
+                                </div>
+                                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{totFatti}/{totEsercizi} esercizi completati</div>
+                              </div>
+                            )}
+                          </div>
+                          <span className={`badge ${scaduta ? 'badge-red' : inScadenza ? 'badge-yellow' : 'badge-green'}`}>
+                            {scaduta ? 'Scaduta' : inScadenza ? 'Scade presto' : 'Attiva'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {/* Storico */}
               {aptList.length > 0 && (

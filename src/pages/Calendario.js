@@ -151,11 +151,10 @@ export default function Calendario() {
                       <div style={{ flex: 1 }}>
                         <div className="apt-name">{client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}</div>
                         <div className="apt-detail">
-                          {apt.oraFine && <span style={{ color: 'var(--text-3)' }}>fino alle {apt.oraFine}</span>}
-                          {q && <span style={{ color: q.allExhausted ? 'var(--red)' : q.isExpiring ? 'var(--amber)' : 'var(--text-3)', marginLeft: apt.oraFine ? 6 : 0 }}>
-                            {apt.oraFine ? '· ' : ''}{q.totalRemaining} lezioni rimaste
-                          </span>}
-                          {apt.note && <span style={{ color: 'var(--text-3)' }}> · {apt.note}</span>}
+                          {apt.oraFine && <span>fino alle {apt.oraFine}</span>}
+                          {apt.giornoScheda && <span style={{ color: 'var(--accent)', marginLeft: apt.oraFine ? 6 : 0 }}>{apt.oraFine ? '· ' : ''}🏋️ {apt.giornoScheda}</span>}
+                          {q && q.isExpiring && <span style={{ color: q.allExhausted ? 'var(--red)' : 'var(--amber)', marginLeft: 6 }}>· {q.totalRemaining} rimaste</span>}
+                          {apt.note && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {apt.note}</span>}
                         </div>
                       </div>
                       <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14, transition: 'color 0.12s' }}

@@ -271,6 +271,31 @@ function SchedaBuilder({ scheda, onChange, clienteId, esercizi }) {
   );
 }
 
+
+// Componente per singolo esercizio nel dettaglio scheda (necessario per useState)
+function AptEsercizioItem({ item, esercizi, onToggle }) {
+  const [imgErr, setImgErr] = React.useState(false);
+  const eInfo = esercizi.find(e => e.id === item.esercizioId);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 7, background: item.fatto ? 'var(--green-light)' : 'var(--surface)', border: `1px solid ${item.fatto ? 'var(--green-border)' : 'var(--border)'}`, marginBottom: 6, opacity: item.fatto ? 0.8 : 1 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 7, overflow: 'hidden', background: 'var(--surface2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {eInfo?.foto && !imgErr
+          ? <img src={eInfo.foto} alt="" onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <span style={{ fontSize: 16 }}>💪</span>}
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: item.fatto ? 'var(--green)' : 'var(--text)', textDecoration: item.fatto ? 'line-through' : 'none' }}>{item.nome || 'Esercizio'}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+          {[item.serie && `${item.serie} serie`, item.ripetizioni && `${item.ripetizioni} rip`, item.carico && `${item.carico} kg`, item.recupero && `rec. ${item.recupero}`].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      <button onClick={onToggle} style={{ background: item.fatto ? 'var(--green)' : 'var(--surface2)', border: `1px solid ${item.fatto ? 'var(--green)' : 'var(--border)'}`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', color: item.fatto ? '#fff' : 'var(--text-3)', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
+        {item.fatto ? '✓ Fatto' : 'Segna'}
+      </button>
+    </div>
+  );
+}
+
 export default function Schede() {
   const { schede, addScheda, updateScheda, deleteScheda } = useSchede();
   const { clients } = useClients();
@@ -449,28 +474,14 @@ export default function Schede() {
                     {lista.length === 0 ? (
                       <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>Nessun esercizio impostato</div>
                     ) : (
-                      lista.map((item, idx) => {
-                        const eInfo = esercizi.find(e => e.id === item.esercizioId);
-                        const [imgErr, setImgErr] = useState(false);
-                        return (
-                          <div key={item.id || idx} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderRadius: 7, background: item.fatto ? 'var(--green-light)' : 'var(--surface)', border: `1px solid ${item.fatto ? 'var(--green-border)' : 'var(--border)'}`, marginBottom: 6, opacity: item.fatto ? 0.8 : 1 }}>
-                            <div style={{ width: 36, height: 36, borderRadius: 7, overflow: 'hidden', background: 'var(--surface2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {eInfo?.foto && !imgErr
-                                ? <img src={eInfo.foto} alt="" onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <span style={{ fontSize: 16 }}>💪</span>}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: item.fatto ? 'var(--green)' : 'var(--text)', textDecoration: item.fatto ? 'line-through' : 'none' }}>{item.nome || 'Esercizio'}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                                {[item.serie && `${item.serie} serie`, item.ripetizioni && `${item.ripetizioni} rip`, item.carico && `${item.carico} kg`, item.recupero && `rec. ${item.recupero}`].filter(Boolean).join(' · ')}
-                              </div>
-                            </div>
-                            <button onClick={() => toggleAllenamentoFatto(s, giorno, idx)} style={{ background: item.fatto ? 'var(--green)' : 'var(--surface2)', border: `1px solid ${item.fatto ? 'var(--green)' : 'var(--border)'}`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', color: item.fatto ? '#fff' : 'var(--text-3)', fontSize: 12, fontWeight: 600, flexShrink: 0 }}>
-                              {item.fatto ? '✓ Fatto' : 'Segna'}
-                            </button>
-                          </div>
-                        );
-                      })
+                      lista.map((item, idx) => (
+                        <AptEsercizioItem
+                          key={item.id || idx}
+                          item={item}
+                          esercizi={esercizi}
+                          onToggle={() => toggleAllenamentoFatto(s, giorno, idx)}
+                        />
+                      ))
                     )}
                   </div>
                 );
