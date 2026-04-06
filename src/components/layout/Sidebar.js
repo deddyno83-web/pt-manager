@@ -1,5 +1,5 @@
 // src/components/layout/Sidebar.js
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -13,9 +13,25 @@ export default function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  return (
-    <div className="sidebar">
+  // Close on route change
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handle = (e) => {
+      if (!e.target.closest('.sidebar') && !e.target.closest('.mobile-menu-btn')) {
+        setMobileOpen(false);
+      }
+    };
+    document.addEventListener('click', handle);
+    return () => document.removeEventListener('click', handle);
+  }, [mobileOpen]);
+
+  const SidebarContent = () => (
+    <>
       <div className="sidebar-logo">
         <h1>PT Manager</h1>
         <span>Personal Trainer</span>
@@ -50,6 +66,31 @@ export default function Sidebar() {
           </svg>
         </button>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button className="mobile-menu-btn" onClick={() => setMobileOpen(o => !o)}>
+          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            {mobileOpen
+              ? <path d="M6 18L18 6M6 6l12 12"/>
+              : <path d="M3 12h18M3 6h18M3 18h18"/>}
+          </svg>
+        </button>
+        <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>PT Manager</span>
+        <div style={{ width: 36 }} />
+      </div>
+
+      {/* Overlay */}
+      {mobileOpen && <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />}
+
+      {/* Sidebar desktop + mobile drawer */}
+      <div className={`sidebar ${mobileOpen ? 'sidebar-mobile-open' : ''}`}>
+        <SidebarContent />
+      </div>
+    </>
   );
 }
