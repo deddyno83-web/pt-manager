@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Clienti from './pages/Clienti';
 import Calendario from './pages/Calendario';
+import Schede from './pages/Schede';
 import './styles/global.css';
 
 function ProtectedRoute({ children }) {
@@ -23,6 +24,7 @@ function AppLayout() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/clienti" element={<Clienti />} />
           <Route path="/calendario" element={<Calendario />} />
+          <Route path="/schede" element={<Schede />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -35,11 +37,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
-      <Route path="/*" element={
-        <ProtectedRoute>
-          <AppLayout />
-        </ProtectedRoute>
-      } />
+      <Route path="/*" element={<ProtectedRoute><AppLayout /></ProtectedRoute>} />
     </Routes>
   );
 }

@@ -5,6 +5,7 @@ import 'react-calendar/dist/Calendar.css';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
+import { useSchede } from '../hooks/useSchede';
 import { format, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
 
@@ -16,13 +17,30 @@ function Toast({ msg, type }) {
 export default function Calendario() {
   const { clients } = useClients();
   const { appointments, addAppointment, deleteAppointment } = useAppointments();
+  const { schede } = useSchede();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', note: '' });
+  const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', durata: '60', note: '', schedaId: '', giornoScheda: '' });
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+
+  const calcFine = (time, durata) => {
+    if (!time || !durata) return '';
+    const [h, m] = time.split(':').map(Number);
+    const totMin = h * 60 + m + Number(durata);
+    const fh = Math.floor(totMin / 60) % 24;
+    const fm = totMin % 60;
+    return `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
+  };
+
+  // Genera slot orari ogni 30 minuti
+  const timeSlots = [];
+  for (let h = 6; h <= 22; h++) {
+    timeSlots.push(`${String(h).padStart(2,'0')}:00`);
+    timeSlots.push(`${String(h).padStart(2,'0')}:30`);
+  }
 
   const dayAppointments = useMemo(() =>
     appointments.filter(a => isSameDay(new Date(a.date), selectedDate))
@@ -56,7 +74,8 @@ export default function Calendario() {
     }
 
     const dateTime = new Date(`${form.date}T${form.time}:00`);
-    await addAppointment({ clientId: form.clientId, date: dateTime.toISOString(), note: form.note });
+    const fineTime = calcFine(form.time, form.durata);
+    await addAppointment({ clientId: form.clientId, date: dateTime.toISOString(), durata: Number(form.durata), oraFine: fineTime, note: form.note, schedaId: form.schedaId || null, giornoScheda: form.giornoScheda || null });
 
     if (q) {
       const newRemaining = q.totalRemaining - 1;
@@ -132,10 +151,11 @@ export default function Calendario() {
                       <div style={{ flex: 1 }}>
                         <div className="apt-name">{client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}</div>
                         <div className="apt-detail">
-                          {q && <span style={{ color: q.allExhausted ? 'var(--red)' : q.isExpiring ? 'var(--amber)' : 'var(--text-3)' }}>
-                            {q.totalRemaining} lezioni rimaste
+                          {apt.oraFine && <span style={{ color: 'var(--text-3)' }}>fino alle {apt.oraFine}</span>}
+                          {q && <span style={{ color: q.allExhausted ? 'var(--red)' : q.isExpiring ? 'var(--amber)' : 'var(--text-3)', marginLeft: apt.oraFine ? 6 : 0 }}>
+                            {apt.oraFine ? '· ' : ''}{q.totalRemaining} lezioni rimaste
                           </span>}
-                          {apt.note && <span style={{ color: 'var(--text-3)' }}>{q ? ' · ' : ''}{apt.note}</span>}
+                          {apt.note && <span style={{ color: 'var(--text-3)' }}> · {apt.note}</span>}
                         </div>
                       </div>
                       <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14, transition: 'color 0.12s' }}
@@ -239,15 +259,71 @@ export default function Calendario() {
                 <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
               </div>
               <div className="input-group" style={{ flex: 1 }}>
-                <label>Ora *</label>
-                <input type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} />
+                <label>Ora inizio *</label>
+                <select value={form.time} onChange={e => setForm({ ...form, time: e.target.value })}>
+                  {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="input-group" style={{ flex: 1 }}>
+                <label>Durata</label>
+                <select value={form.durata} onChange={e => setForm({ ...form, durata: e.target.value })}>
+                  <option value="30">30 min</option>
+                  <option value="60">1 ora</option>
+                  <option value="90">1 ora e 30</option>
+                  <option value="120">2 ore</option>
+                </select>
               </div>
             </div>
+            {form.time && (
+              <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 14, display: 'flex', gap: 16 }}>
+                <span>⏱ Inizio: {form.time}</span>
+                <span>→</span>
+                <span>Fine: {calcFine(form.time, form.durata)}</span>
+                <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>({form.durata} min)</span>
+              </div>
+            )}
 
             <div className="input-group">
               <label>Note</label>
               <input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="es. Gambe, upper body, cardio..." />
             </div>
+
+            {/* Selezione scheda */}
+            {form.clientId && (() => {
+              const GIORNI_MAP = { 0: 'Domenica', 1: 'Lunedì', 2: 'Martedì', 3: 'Mercoledì', 4: 'Giovedì', 5: 'Venerdì', 6: 'Sabato' };
+              const schedaCliente = schede.filter(s => s.clienteId === form.clientId);
+              const dataSelezionata = new Date(form.date);
+              const giornoSettimana = GIORNI_MAP[dataSelezionata.getDay()];
+              return schedaCliente.length > 0 ? (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Scheda allenamento</div>
+                  <div className="input-group" style={{ marginBottom: 8 }}>
+                    <label>Scheda da associare</label>
+                    <select value={form.schedaId} onChange={e => {
+                      const s = schede.find(sc => sc.id === e.target.value);
+                      const defaultGiorno = s && s.giorni && s.giorni[giornoSettimana] ? giornoSettimana : '';
+                      setForm({ ...form, schedaId: e.target.value, giornoScheda: defaultGiorno });
+                    }}>
+                      <option value="">Nessuna scheda</option>
+                      {schedaCliente.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                    </select>
+                  </div>
+                  {form.schedaId && (() => {
+                    const s = schede.find(sc => sc.id === form.schedaId);
+                    const giorniDisp = s ? Object.keys(s.giorni || {}) : [];
+                    return giorniDisp.length > 0 ? (
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label>Giorno allenamento {giornoSettimana && `(suggerito: ${giornoSettimana})`}</label>
+                        <select value={form.giornoScheda} onChange={e => setForm({ ...form, giornoScheda: e.target.value })}>
+                          <option value="">— Seleziona giorno —</option>
+                          {giorniDisp.map(g => <option key={g} value={g}>{g} ({(s.giorni[g] || []).length} esercizi)</option>)}
+                        </select>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              ) : null;
+            })()}
 
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Annulla</button>

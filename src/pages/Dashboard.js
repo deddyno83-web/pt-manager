@@ -1,15 +1,17 @@
 // src/pages/Dashboard.js
 import React, { useMemo } from 'react';
 import { useClients } from '../hooks/useClients';
+import { useSchede } from '../hooks/useSchede';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, parseISO, addDays, isBefore } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const { clients } = useClients();
   const { appointments } = useAppointments();
+  const { schede } = useSchede();
   const navigate = useNavigate();
   const today = new Date();
 
@@ -57,6 +59,15 @@ export default function Dashboard() {
 
     return { individuali, corsi, totale: individuali + corsi };
   }, [clients]);
+
+  const schedeInScadenza = useMemo(() => {
+    const now = new Date();
+    return schede.filter(s => {
+      if (!s.dataFine) return false;
+      const fine = parseISO(s.dataFine);
+      return isBefore(fine, addDays(now, 7));
+    });
+  }, [schede]);
 
   const corsi = clients.filter(c => c.type === 'corso');
   const individuali = clients.filter(c => c.type === 'individuale');
@@ -157,6 +168,22 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Schede in scadenza */}
+      {schedeInScadenza.length > 0 && (
+        <div className="alert alert-warning" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <strong>⚠ {schedeInScadenza.length} scheda{schedeInScadenza.length > 1 ? 'e' : ''} in scadenza</strong>
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              {schedeInScadenza.map(s => {
+                const cl = clients.find(c => c.id === s.clienteId);
+                return <span key={s.id} style={{ marginRight: 12 }}>{cl ? `${cl.nome} ${cl.cognome}` : '—'} · {s.nome} (scade {format(parseISO(s.dataFine), 'd MMM', { locale: it })})</span>;
+              })}
+            </div>
+          </div>
+          <button className="btn btn-sm btn-secondary" onClick={() => navigate('/schede')}>Gestisci schede →</button>
+        </div>
+      )}
 
       <div className="grid-2">
         {/* Prossimi appuntamenti */}
