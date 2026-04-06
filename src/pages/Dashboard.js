@@ -30,25 +30,36 @@ export default function Dashboard() {
     [clients, appointments]
   );
 
-  const monthlyRevenue = useMemo(() => {
+  const revenue = useMemo(() => {
     const start = startOfMonth(today);
     const end = endOfMonth(today);
-    return clients.reduce((sum, c) => {
-      if (c.type === 'corso') return sum + (c.monthlyFee || 0);
-      const pkgs = c.packages || [];
-      const legacyAmt = (!pkgs.length && c.packagePurchasedAt) ? (() => {
-        const d = new Date(c.packagePurchasedAt);
-        return d >= start && d <= end ? (c.packageCost || 0) : 0;
-      })() : 0;
-      const newAmt = pkgs.reduce((s, p) => {
-        const d = new Date(p.purchasedAt);
-        return d >= start && d <= end ? s + (p.cost || 0) : s;
-      }, 0);
-      return sum + legacyAmt + newAmt;
-    }, 0);
-  }, [clients, appointments]);
+
+    let individuali = 0;
+    let corsi = 0;
+
+    clients.forEach(c => {
+      if (c.type === 'corso') {
+        corsi += (c.monthlyFee || 0);
+      } else {
+        // pacchetti acquistati questo mese
+        const pkgs = c.packages || [];
+        if (pkgs.length === 0 && c.packagePurchasedAt) {
+          const d = new Date(c.packagePurchasedAt);
+          if (d >= start && d <= end) individuali += (c.packageCost || 0);
+        } else {
+          pkgs.forEach(p => {
+            const d = new Date(p.purchasedAt);
+            if (d >= start && d <= end) individuali += (p.cost || 0);
+          });
+        }
+      }
+    });
+
+    return { individuali, corsi, totale: individuali + corsi };
+  }, [clients]);
 
   const corsi = clients.filter(c => c.type === 'corso');
+  const individuali = clients.filter(c => c.type === 'individuale');
 
   return (
     <div>
@@ -57,34 +68,98 @@ export default function Dashboard() {
         <p>{format(today, "EEEE d MMMM yyyy", { locale: it })}</p>
       </div>
 
-      <div className="grid-4" style={{ marginBottom: 24 }}>
+      {/* Stat cards principali */}
+      <div className="grid-4" style={{ marginBottom: 20 }}>
         <div className="stat-card">
           <div className="stat-icon accent">👥</div>
-          <div className="stat-label">Clienti attivi</div>
+          <div className="stat-label">Clienti totali</div>
           <div className="stat-value">{clients.length}</div>
-          <div className="stat-sub">totale clienti</div>
+          <div className="stat-sub">{individuali.length} ind. · {corsi.length} corsi</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green">€</div>
-          <div className="stat-label">Incassato questo mese</div>
-          <div className="stat-value" style={{ color: 'var(--green)' }}>€{monthlyRevenue.toLocaleString('it-IT')}</div>
-          <div className="stat-sub">{format(today, 'MMMM yyyy', { locale: it })}</div>
+          <div className="stat-label">Totale {format(today, 'MMMM', { locale: it })}</div>
+          <div className="stat-value" style={{ color: 'var(--green)' }}>€{revenue.totale.toLocaleString('it-IT')}</div>
+          <div className="stat-sub">incassato questo mese</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue">📅</div>
-          <div className="stat-label">Appuntamenti totali</div>
+          <div className="stat-label">Lezioni registrate</div>
           <div className="stat-value" style={{ color: 'var(--accent)' }}>{appointments.length}</div>
-          <div className="stat-sub">lezioni registrate</div>
+          <div className="stat-sub">totale storico</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon yellow">⚠</div>
-          <div className="stat-label">Pacchetti in scadenza</div>
+          <div className="stat-label">In scadenza</div>
           <div className="stat-value" style={{ color: 'var(--amber)' }}>{expiring.length}</div>
-          <div className="stat-sub">≤ 2 lezioni rimaste</div>
+          <div className="stat-sub">pacchetti ≤ 2 lezioni</div>
         </div>
       </div>
 
+      {/* Entrate divise */}
+      <div className="grid-2" style={{ marginBottom: 20 }}>
+        <div className="card">
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
+            Entrate {format(today, 'MMMM yyyy', { locale: it })}
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1, background: 'var(--accent-light)', borderRadius: 10, padding: '14px 16px', border: '1px solid #bfdbfe' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Clienti individuali</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.5px' }}>€{revenue.individuali.toLocaleString('it-IT')}</div>
+              <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 4 }}>{individuali.length} clienti</div>
+            </div>
+            <div style={{ flex: 1, background: 'var(--green-light)', borderRadius: 10, padding: '14px 16px', border: '1px solid var(--green-border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Corsi di gruppo</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.5px' }}>€{revenue.corsi.toLocaleString('it-IT')}</div>
+              <div style={{ fontSize: 11, color: '#16a34a', marginTop: 4 }}>{corsi.length} corsi attivi</div>
+            </div>
+          </div>
+          {/* Barra proporzione */}
+          {revenue.totale > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ height: 6, background: 'var(--surface2)', borderRadius: 6, overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${(revenue.individuali / revenue.totale) * 100}%`, background: 'var(--accent)', borderRadius: '6px 0 0 6px', transition: 'width 0.4s' }} />
+                <div style={{ flex: 1, background: 'var(--green)', borderRadius: '0 6px 6px 0' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-3)' }}>
+                <span>{Math.round((revenue.individuali / revenue.totale) * 100)}% individuali</span>
+                <span>{Math.round((revenue.corsi / revenue.totale) * 100)}% corsi</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Corsi mensili lista */}
+        {corsi.length > 0 && (
+          <div className="card">
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>Corsi attivi</div>
+            {corsi.map(corso => (
+              <div key={corso.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{corso.nome} {corso.cognome}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 1 }}>{corso.partecipanti || 0} partecipanti</div>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--green)', letterSpacing: '-0.3px' }}>€{corso.monthlyFee}/mese</div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, fontSize: 13 }}>
+              <span style={{ color: 'var(--text-3)', fontWeight: 600 }}>Totale corsi</span>
+              <span style={{ fontWeight: 700, color: 'var(--green)' }}>€{revenue.corsi.toLocaleString('it-IT')}/mese</span>
+            </div>
+          </div>
+        )}
+
+        {corsi.length === 0 && (
+          <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: 'var(--text-3)' }}>
+            <div style={{ fontSize: 28 }}>📚</div>
+            <div style={{ fontSize: 13 }}>Nessun corso attivo</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/clienti')}>+ Aggiungi corso</button>
+          </div>
+        )}
+      </div>
+
       <div className="grid-2">
+        {/* Prossimi appuntamenti */}
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px' }}>Prossimi appuntamenti</h3>
@@ -114,6 +189,7 @@ export default function Dashboard() {
           )}
         </div>
 
+        {/* Pacchetti in scadenza */}
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px' }}>Pacchetti in scadenza</h3>
@@ -141,21 +217,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {corsi.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, letterSpacing: '-0.2px' }}>Corsi mensili</h3>
-          <div className="grid-3">
-            {corsi.map(corso => (
-              <div key={corso.id} style={{ background: 'var(--bg)', borderRadius: 8, padding: 14, border: '1px solid var(--border)' }}>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{corso.nome}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 10 }}>{corso.partecipanti || 0} partecipanti</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.3px' }}>€{corso.monthlyFee}/mese</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
