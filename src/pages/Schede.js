@@ -355,12 +355,20 @@ export default function Schede() {
     esercizi_giorno[idx] = { ...esercizi_giorno[idx], fatto: !esercizi_giorno[idx].fatto };
     giorni[giorno] = esercizi_giorno;
     await updateScheda(scheda.id, { giorni });
+    // Sync local state so UI updates immediately without waiting Firestore
+    if (showDetail && showDetail.id === scheda.id) {
+      setShowDetail(prev => ({ ...prev, giorni }));
+    }
   };
 
   const markGiornoFatto = async (scheda, giorno, fatto) => {
     const giorni = { ...scheda.giorni };
     giorni[giorno] = (giorni[giorno] || []).map(e => ({ ...e, fatto }));
     await updateScheda(scheda.id, { giorni });
+    // Sync local state
+    if (showDetail && showDetail.id === scheda.id) {
+      setShowDetail(prev => ({ ...prev, giorni }));
+    }
   };
 
   const statusBadge = (s) => {

@@ -7,6 +7,7 @@ const navItems = [
   { path: '/', label: 'Dashboard' },
   { path: '/clienti', label: 'Clienti' },
   { path: '/schede', label: 'Schede' },
+  { path: '/template', label: 'Template' },
   { path: '/calendario', label: 'Calendario' },
 ];
 

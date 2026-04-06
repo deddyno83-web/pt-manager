@@ -94,3 +94,21 @@ export const ESERCIZI_DEFAULT = [
   { id: 'jumping_jack', nome: 'Jumping Jack', categoria: 'Corpo libero', foto: IMG.corpo, descrizione: 'Salta aprendo gambe e braccia simultaneamente, poi riuniscile. Ottimo riscaldamento.' },
   { id: 'squat_jump', nome: 'Squat Jump', categoria: 'Corpo libero', foto: IMG.corpo, descrizione: 'Esegui uno squat e nella fase di risalita salta esplosivamente verso l\'alto.' },
 ];
+
+// Categorie standard schede di allenamento
+export const CATEGORIE_SCHEDE = [
+  { id: 'massa', nome: 'Massa Muscolare', emoji: '💪', descrizione: 'Ipertrofia muscolare con carichi progressivi, 8-12 rip' },
+  { id: 'forza', nome: 'Forza', emoji: '🏋️', descrizione: 'Forza massimale con carichi elevati, 3-6 rip' },
+  { id: 'definizione', nome: 'Definizione', emoji: '🔥', descrizione: 'Tonificazione e riduzione grasso, carichi medi, recuperi brevi' },
+  { id: 'dimagrimento', nome: 'Dimagrimento', emoji: '⚡', descrizione: 'Cardio + pesi, circuiti ad alta intensità, HIIT' },
+  { id: 'resistenza', nome: 'Resistenza', emoji: '🏃', descrizione: 'Resistenza muscolare, alte ripetizioni, recuperi brevi' },
+  { id: 'circuito', nome: 'Circuito', emoji: '🔄', descrizione: 'Circuit training, esercizi in sequenza senza pause' },
+  { id: 'fullbody', nome: 'Full Body', emoji: '🏆', descrizione: 'Allenamento completo, tutti i gruppi muscolari in una seduta' },
+  { id: 'upper_lower', nome: 'Upper/Lower', emoji: '↕️', descrizione: 'Split parte superiore e inferiore alternati' },
+  { id: 'push_pull', nome: 'Push/Pull/Legs', emoji: '🔀', descrizione: 'Split spinta, trazione e gambe su giorni separati' },
+  { id: 'powerbuilding', nome: 'Powerbuilding', emoji: '⚔️', descrizione: 'Mix forza e massa, carichi alti + volume moderato' },
+  { id: 'riabilitazione', nome: 'Riabilitazione', emoji: '🩺', descrizione: 'Recupero infortuni, carichi bassi e movimenti controllati' },
+  { id: 'principianti', nome: 'Principianti', emoji: '🌱', descrizione: 'Adattamento al movimento, tecnica base, carichi leggeri' },
+  { id: 'donna', nome: 'Femminile', emoji: '🌸', descrizione: 'Focus glutei e gambe, tonificazione, basso impatto' },
+  { id: 'custom', nome: 'Personalizzato', emoji: '✨', descrizione: 'Categoria personalizzata' },
+];

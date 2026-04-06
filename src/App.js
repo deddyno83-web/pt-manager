@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Clienti from './pages/Clienti';
 import Calendario from './pages/Calendario';
 import Schede from './pages/Schede';
+import Template from './pages/Template';
 import './styles/global.css';
 
 function ProtectedRoute({ children }) {
@@ -25,6 +26,7 @@ function AppLayout() {
           <Route path="/clienti" element={<Clienti />} />
           <Route path="/calendario" element={<Calendario />} />
           <Route path="/schede" element={<Schede />} />
+          <Route path="/template" element={<Template />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>

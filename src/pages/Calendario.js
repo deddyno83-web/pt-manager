@@ -5,6 +5,7 @@ import 'react-calendar/dist/Calendar.css';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
+import { ESERCIZI_DEFAULT } from '../data/esercizi';
 import { useSchede } from '../hooks/useSchede';
 import { format, isSameDay } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -14,17 +15,41 @@ function Toast({ msg, type }) {
   return <div className={`toast ${type}`}>{msg}</div>;
 }
 
+
+function ImgWithFallback({ src, size = 44 }) {
+  const [err, setErr] = React.useState(false);
+  if (!src || err) return <span style={{ fontSize: size * 0.5 }}>💪</span>;
+  return <img src={src} alt="" onError={() => setErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+}
+
 export default function Calendario() {
   const { clients } = useClients();
   const { appointments, addAppointment, deleteAppointment } = useAppointments();
-  const { schede } = useSchede();
+  const { schede, updateScheda } = useSchede();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [showSchedaModal, setShowSchedaModal] = useState(null); // { scheda, giorno }
   const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', durata: '60', note: '', schedaId: '', giornoScheda: '' });
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
+
+  const toggleEsercizioDone = async (scheda, giorno, idx) => {
+    const giorni = { ...scheda.giorni };
+    const lista = [...(giorni[giorno] || [])];
+    lista[idx] = { ...lista[idx], fatto: !lista[idx].fatto };
+    giorni[giorno] = lista;
+    await updateScheda(scheda.id, { giorni });
+    setShowSchedaModal(prev => prev ? { ...prev, scheda: { ...prev.scheda, giorni } } : null);
+  };
+
+  const markTuttoFatto = async (scheda, giorno, fatto) => {
+    const giorni = { ...scheda.giorni };
+    giorni[giorno] = (giorni[giorno] || []).map(e => ({ ...e, fatto }));
+    await updateScheda(scheda.id, { giorni });
+    setShowSchedaModal(prev => prev ? { ...prev, scheda: { ...prev.scheda, giorni } } : null);
+  };
 
   const calcFine = (time, durata) => {
     if (!time || !durata) return '';
@@ -146,19 +171,30 @@ export default function Calendario() {
                 const q = getClientQueue(apt.clientId);
                 return (
                   <div key={apt.id}>
-                    <div className="appointment-item">
+                    <div className="appointment-item" style={{ cursor: apt.schedaId ? 'pointer' : 'default' }}
+                      onClick={() => {
+                        if (apt.schedaId && apt.giornoScheda) {
+                          const s = schede.find(sc => sc.id === apt.schedaId);
+                          if (s) setShowSchedaModal({ scheda: s, giorno: apt.giornoScheda });
+                        }
+                      }}>
                       <div className="apt-time">{format(new Date(apt.date), 'HH:mm')}</div>
                       <div style={{ flex: 1 }}>
                         <div className="apt-name">{client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}</div>
                         <div className="apt-detail">
                           {apt.oraFine && <span>fino alle {apt.oraFine}</span>}
-                          {apt.giornoScheda && <span style={{ color: 'var(--accent)', marginLeft: apt.oraFine ? 6 : 0 }}>{apt.oraFine ? '· ' : ''}🏋️ {apt.giornoScheda}</span>}
+                          {apt.giornoScheda && (
+                            <span style={{ color: 'var(--accent)', marginLeft: apt.oraFine ? 6 : 0, fontWeight: 600 }}>
+                              {apt.oraFine ? '· ' : ''}🏋️ {apt.giornoScheda}
+                              {apt.schedaId && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>→ apri</span>}
+                            </span>
+                          )}
                           {q && q.isExpiring && <span style={{ color: q.allExhausted ? 'var(--red)' : 'var(--amber)', marginLeft: 6 }}>· {q.totalRemaining} rimaste</span>}
                           {apt.note && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {apt.note}</span>}
                         </div>
                       </div>
-                      <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14, transition: 'color 0.12s' }}
-                        onClick={() => setConfirmDel(apt.id)} title="Elimina">✕</button>
+                      <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14 }}
+                        onClick={e => { e.stopPropagation(); setConfirmDel(apt.id); }} title="Elimina">✕</button>
                     </div>
                     {confirmDel === apt.id && (
                       <div className="alert alert-danger" style={{ marginBottom: 8, fontSize: 12 }}>
@@ -220,6 +256,87 @@ export default function Calendario() {
           </div>
         </div>
       </div>
+
+      {/* SCHEDA GIORNO MODAL */}
+      {showSchedaModal && (() => {
+        const { scheda, giorno } = showSchedaModal;
+        const lista = scheda.giorni?.[giorno] || [];
+        const tuttiFatti = lista.length > 0 && lista.every(e => e.fatto);
+        const fattCount = lista.filter(e => e.fatto).length;
+        return (
+          <div className="modal-overlay" onClick={() => setShowSchedaModal(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+              <div className="modal-header">
+                <div>
+                  <h3>🏋️ {giorno}</h3>
+                  <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2 }}>{scheda.nome} · {fattCount}/{lista.length} completati</div>
+                </div>
+                <button className="modal-close" onClick={() => setShowSchedaModal(null)}>✕</button>
+              </div>
+
+              {/* Barra progresso */}
+              <div className="progress-bar" style={{ marginBottom: 16 }}>
+                <div className="progress-fill green" style={{ width: lista.length > 0 ? `${(fattCount/lista.length)*100}%` : '0%' }} />
+              </div>
+
+              {lista.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-3)', fontSize: 13 }}>
+                  Nessun esercizio per questo giorno
+                </div>
+              ) : (
+                <>
+                  {lista.map((item, idx) => {
+                    const eInfo = ESERCIZI_DEFAULT.find(e => e.id === item.esercizioId);
+                    return (
+                      <div key={item.id || idx} style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 14px', borderRadius: 8, marginBottom: 8,
+                        background: item.fatto ? 'var(--green-light)' : 'var(--bg)',
+                        border: `1px solid ${item.fatto ? 'var(--green-border)' : 'var(--border)'}`,
+                        transition: 'all 0.15s',
+                      }}>
+                        {/* Foto */}
+                        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', background: 'var(--surface2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <ImgWithFallback src={eInfo?.foto} size={44} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: item.fatto ? 'var(--green)' : 'var(--text)', textDecoration: item.fatto ? 'line-through' : 'none', marginBottom: 3 }}>
+                            {item.nome || 'Esercizio'}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                            {[item.serie && `${item.serie} serie`, item.ripetizioni && `${item.ripetizioni} rip`, item.carico && `${item.carico} kg`, item.recupero && `rec. ${item.recupero}`].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => toggleEsercizioDone(scheda, giorno, idx)}
+                          style={{
+                            background: item.fatto ? 'var(--green)' : 'var(--surface)',
+                            border: `1.5px solid ${item.fatto ? 'var(--green)' : 'var(--border2)'}`,
+                            borderRadius: 8, padding: '7px 14px', cursor: 'pointer',
+                            color: item.fatto ? '#fff' : 'var(--text-2)',
+                            fontSize: 13, fontWeight: 600, flexShrink: 0,
+                            transition: 'all 0.15s',
+                          }}>
+                          {item.fatto ? '✓ Fatto' : 'Segna fatto'}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{fattCount} / {lista.length} esercizi completati</span>
+                    <button
+                      className={`btn ${tuttiFatti ? 'btn-secondary' : 'btn-primary'}`}
+                      onClick={() => markTuttoFatto(scheda, giorno, !tuttiFatti)}>
+                      {tuttiFatti ? '↩ Riapri tutto' : '✓ Segna tutto fatto'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* BOOK MODAL */}
       {showModal && (
