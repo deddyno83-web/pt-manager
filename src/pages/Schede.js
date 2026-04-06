@@ -1,6 +1,7 @@
 // src/pages/Schede.js
 import React, { useState, useMemo } from 'react';
 import { useSchede } from '../hooks/useSchede';
+import { useAppointments } from '../hooks/useAppointments';
 import { useClients } from '../hooks/useClients';
 import { ESERCIZI_DEFAULT, CATEGORIE } from '../data/esercizi';
 import { format, parseISO, isAfter, isBefore, addDays } from 'date-fns';
@@ -298,6 +299,7 @@ function AptEsercizioItem({ item, esercizi, onToggle }) {
 
 export default function Schede() {
   const { schede, addScheda, updateScheda, deleteScheda } = useSchede();
+  const { appointments, updateAppointment } = useAppointments();
   const { clients } = useClients();
   const [toast, setToast] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -497,7 +499,16 @@ export default function Schede() {
 
               <div className="modal-footer">
                 <button className="btn btn-ghost" onClick={() => { openEdit(s); setShowDetail(null); }}>Modifica scheda</button>
-                <button className="btn btn-danger" onClick={async () => { await deleteScheda(s.id); setShowDetail(null); showToast('Scheda eliminata', 'warning'); }}>Elimina</button>
+                <button className="btn btn-danger" onClick={async () => {
+                      // Disassocia scheda dagli appuntamenti prima di eliminarla
+                      const linked = appointments.filter(a => a.schedaId === s.id);
+                      for (const apt of linked) {
+                        await updateAppointment(apt.id, { schedaId: null, giornoScheda: null });
+                      }
+                      await deleteScheda(s.id);
+                      setShowDetail(null);
+                      showToast(`Scheda eliminata${linked.length > 0 ? ` · ${linked.length} appuntament${linked.length > 1 ? 'i' : 'o'} disassociat${linked.length > 1 ? 'i' : 'o'}` : ''}`, 'warning');
+                    }}>Elimina</button>
               </div>
             </div>
           </div>

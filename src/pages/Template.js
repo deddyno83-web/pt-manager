@@ -1,6 +1,7 @@
 // src/pages/Template.js
 import React, { useState, useMemo } from 'react';
 import { useTemplate } from '../hooks/useTemplate';
+import { useAppointments } from '../hooks/useAppointments';
 import { useSchede } from '../hooks/useSchede';
 import { useClients } from '../hooks/useClients';
 import { ESERCIZI_DEFAULT, CATEGORIE, CATEGORIE_SCHEDE } from '../data/esercizi';
@@ -187,6 +188,7 @@ function GiorniBuilder({ giorni, onChange }) {
 
 export default function Template() {
   const { templates, addTemplate, updateTemplate, deleteTemplate } = useTemplate();
+  const { appointments, updateAppointment } = useAppointments();
   const { addScheda } = useSchede();
   const { clients } = useClients();
   const [toast, setToast] = useState(null);
@@ -337,7 +339,12 @@ export default function Template() {
                   </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setShowDetail(t)}>Vedi</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => openEdit(t)}>✏️</button>
-                  <button className="btn btn-danger btn-sm" onClick={async () => { await deleteTemplate(t.id); showToast('Template eliminato', 'warning'); }}>✕</button>
+                  <button className="btn btn-danger btn-sm" onClick={async () => {
+                    // I template non sono collegati direttamente agli appuntamenti
+                    // Le schede create da template rimangono intatte
+                    await deleteTemplate(t.id);
+                    showToast('Template eliminato', 'warning');
+                  }}>✕</button>
                 </div>
               </div>
             );

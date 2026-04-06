@@ -91,6 +91,242 @@ export default function Clienti() {
     setConfirmDelete(null); setShowDetail(null);
   };
 
+  const generatePDF = (client) => {
+    const q = getPackageQueue(client, appointments);
+    const schedeCliente = schede.filter(s => s.clienteId === client.id);
+    const aptList = appointments.filter(a => a.clientId === client.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Use window.jspdf if available, otherwise dynamic import
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+      // Load jsPDF dynamically
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = () => generatePDF(client);
+      document.head.appendChild(script);
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    let y = 0;
+
+    // ── HEADER ──
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, pageW, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PT MANAGER', 14, 12);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Scheda Cliente', 14, 21);
+    doc.setFontSize(9);
+    doc.text(new Date().toLocaleDateString('it-IT'), pageW - 14, 21, { align: 'right' });
+
+    y = 38;
+
+    // ── DATI CLIENTE ──
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${client.nome} ${client.cognome}`, 14, y);
+    y += 7;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 116, 139);
+    const tipo = client.type === 'corso' ? 'Corso di gruppo' : 'Cliente individuale';
+    doc.text(tipo, 14, y);
+    y += 8;
+
+    // Info line
+    const infos = [];
+    if (client.telefono) infos.push(`Tel: ${client.telefono}`);
+    if (client.email) infos.push(`Email: ${client.email}`);
+    if (infos.length > 0) {
+      doc.setTextColor(71, 85, 105);
+      doc.setFontSize(9);
+      doc.text(infos.join('   ·   '), 14, y);
+      y += 8;
+    }
+
+    // Divider
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, y, pageW - 14, y);
+    y += 8;
+
+    // ── PACCHETTI ──
+    if (client.type === 'individuale' && q) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(37, 99, 235);
+      doc.text('Pacchetti Lezioni', 14, y);
+      y += 7;
+
+      // Summary box
+      doc.setFillColor(239, 246, 255);
+      doc.roundedRect(14, y, pageW - 28, 16, 2, 2, 'F');
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(15, 23, 42);
+      doc.text(`Lezioni rimaste: ${q.totalRemaining}/${q.totalLessons}`, 20, y + 7);
+      const totCosto = (q.packages || []).reduce((s, p) => s + (p.cost || 0), 0);
+      doc.text(`Valore totale pacchetti: €${totCosto.toLocaleString('it-IT')}`, 20, y + 13);
+      y += 22;
+
+      // Package list
+      if (q.packages && q.packages.length > 0) {
+        q.packages.forEach((pkg, i) => {
+          const status = pkg.exhausted ? 'Esaurito' : pkg.id === q.activePackage?.id ? 'In corso' : 'In coda';
+          const statusColor = pkg.exhausted ? [220, 38, 38] : pkg.id === q.activePackage?.id ? [37, 99, 235] : [22, 163, 74];
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...statusColor);
+          doc.text(`${i + 1}. ${status}`, 14, y);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(71, 85, 105);
+          doc.text(`${pkg.lessons} lezioni  ·  €${pkg.cost}  ·  ${pkg.remaining}/${pkg.lessons} rimaste`, 50, y);
+          if (pkg.purchasedAt) doc.text(`Acquistato: ${pkg.purchasedAt}`, pageW - 14, y, { align: 'right' });
+          y += 6;
+        });
+      }
+      y += 6;
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, y, pageW - 14, y);
+      y += 8;
+    }
+
+    // ── SCHEDE ALLENAMENTO ──
+    if (schedeCliente.length > 0) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(37, 99, 235);
+      doc.text('Schede Allenamento', 14, y);
+      y += 8;
+
+      schedeCliente.forEach((scheda) => {
+        // Check page space
+        if (y > 250) { doc.addPage(); y = 20; }
+
+        const oggi = new Date();
+        const scaduta = scheda.dataFine && new Date(scheda.dataFine) < oggi;
+        const inScadenza = scheda.dataFine && !scaduta && new Date(scheda.dataFine) < new Date(oggi.getTime() + 7*86400000);
+        const statusColor = scaduta ? [220, 38, 38] : inScadenza ? [217, 119, 6] : [22, 163, 74];
+        const statusText = scaduta ? 'Scaduta' : inScadenza ? 'Scade presto' : 'Attiva';
+
+        // Scheda header
+        doc.setFillColor(248, 250, 251);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(14, y - 2, pageW - 28, 12, 1, 1, 'FD');
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(scheda.nome, 18, y + 6);
+
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...statusColor);
+        doc.text(statusText, pageW - 18, y + 6, { align: 'right' });
+        y += 16;
+
+        // Date
+        if (scheda.dataInizio || scheda.dataFine) {
+          doc.setFontSize(8.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          const dateStr = [scheda.dataInizio && `Inizio: ${scheda.dataInizio}`, scheda.dataFine && `Scadenza: ${scheda.dataFine}`].filter(Boolean).join('   ·   ');
+          doc.text(dateStr, 18, y);
+          y += 6;
+        }
+
+        // Giorni e esercizi
+        const giorni = scheda.giorni || {};
+        const GIORNI_ORDER = ['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
+        GIORNI_ORDER.filter(g => giorni[g]).forEach(giorno => {
+          if (y > 260) { doc.addPage(); y = 20; }
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(37, 99, 235);
+          doc.text(`▸ ${giorno}`, 18, y);
+
+          const lista = giorni[giorno] || [];
+          const fattCount = lista.filter(e => e.fatto).length;
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          doc.text(`${lista.length} esercizi  ·  ${fattCount}/${lista.length} completati`, 60, y);
+          y += 5;
+
+          lista.forEach((es) => {
+            if (y > 265) { doc.addPage(); y = 20; }
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(es.fatto ? 22 : 71, es.fatto ? 163 : 85, es.fatto ? 74 : 105);
+            const check = es.fatto ? '✓ ' : '○ ';
+            const details = [es.serie && `${es.serie}×${es.ripetizioni}`, es.carico && `${es.carico}kg`, es.recupero && `rec.${es.recupero}`].filter(Boolean).join(' ');
+            doc.text(`    ${check}${es.nome || 'Esercizio'}${details ? '  —  ' + details : ''}`, 18, y);
+            y += 5;
+          });
+          y += 3;
+        });
+        y += 6;
+      });
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, y, pageW - 14, y);
+      y += 8;
+    }
+
+    // ── STORICO APPUNTAMENTI ──
+    if (aptList.length > 0) {
+      if (y > 220) { doc.addPage(); y = 20; }
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(37, 99, 235);
+      doc.text('Storico Appuntamenti', 14, y);
+      y += 8;
+
+      const recenti = aptList.slice(0, 15);
+      recenti.forEach((apt) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        const d = new Date(apt.date);
+        const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+        const timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        let line = `${dateStr}  ${timeStr}`;
+        if (apt.oraFine) line += ` → ${apt.oraFine}`;
+        if (apt.giornoScheda) line += `  ·  🏋 ${apt.giornoScheda}`;
+        if (apt.note) line += `  ·  ${apt.note}`;
+        doc.text(line, 18, y);
+        y += 5.5;
+      });
+      if (aptList.length > 15) {
+        doc.setFontSize(8);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`... e altri ${aptList.length - 15} appuntamenti`, 18, y);
+      }
+    }
+
+    // ── FOOTER ──
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFillColor(248, 250, 251);
+      doc.rect(0, 285, pageW, 12, 'F');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text('PT Manager — Generato il ' + new Date().toLocaleDateString('it-IT'), 14, 292);
+      doc.text(`Pagina ${i} di ${pageCount}`, pageW - 14, 292, { align: 'right' });
+    }
+
+    doc.save(`${client.nome}_${client.cognome}_scheda.pdf`);
+    showToast('PDF generato!');
+  };
+
   return (
     <div>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
@@ -282,6 +518,9 @@ export default function Clienti() {
               )}
 
               <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => generatePDF(c)} style={{ color: 'var(--red)' }}>
+                  📄 Scarica PDF
+                </button>
                 <button className="btn btn-ghost" onClick={() => { openEdit(c); setShowDetail(null); }}>Modifica</button>
                 <button className="btn btn-danger" onClick={() => setConfirmDelete(c.id)}>Elimina</button>
               </div>
