@@ -230,7 +230,17 @@ export default function Template() {
     if (!form.nome) return showToast('Nome obbligatorio', 'error');
     if (editTpl) {
       await updateTemplate(editTpl.id, form);
-      showToast('Template aggiornato!');
+      // Aggiorna le schede collegate a questo template (solo giorni/esercizi, non le date)
+      const { schede: allSchede } = { schede };
+      const linked = schede.filter(s => s.fromTemplate === editTpl.id);
+      if (linked.length > 0) {
+        for (const s of linked) {
+          await updateScheda(s.id, { giorni: form.giorni });
+        }
+        showToast(`Template aggiornato! Aggiornate anche ${linked.length} scheda/e collegate.`);
+      } else {
+        showToast('Template aggiornato!');
+      }
     } else {
       await addTemplate(form);
       showToast('Template salvato!');

@@ -1,4 +1,5 @@
 // src/pages/Clienti.js
+import { generateClientePDF } from '../utils/generatePDF';
 import React, { useState, useMemo } from 'react';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
@@ -323,8 +324,40 @@ export default function Clienti() {
       doc.text(`Pagina ${i} di ${pageCount}`, pageW - 14, 292, { align: 'right' });
     }
 
-    doc.save(`${client.nome}_${client.cognome}_scheda.pdf`);
-    showToast('PDF generato!');
+    // Apri in nuova scheda per poter condividere/stampare/scaricare
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.download = `${client.nome}_${client.cognome}_PT_Manager.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Mantieni l'URL disponibile per condivisione
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showToast('📄 PDF aperto — puoi scaricarlo, stamparlo o condividerlo!');
+  };
+
+  const handleGeneratePDF = async (client) => {
+    try {
+      const q = getPackageQueue(client, appointments);
+      const pkgs = q ? q.packages : [];
+      const schedeC = schede.filter(s => s.clienteId === client.id);
+      const apts = appointments.filter(a => a.clientId === client.id);
+      await generateClientePDF(client, pkgs, schedeC, apts);
+      showToast('PDF generato con successo!');
+    } catch(e) {
+      console.error(e);
+      showToast('Errore nella generazione del PDF', 'error');
+    }
+  };
+
+  const handleWhatsApp = (client) => {
+    const phone = client.telefono?.replace(/\D/g, '');
+    if (!phone) return showToast('Numero di telefono non impostato', 'error');
+    const msg = encodeURIComponent(`Ciao ${client.nome}! Ti invio la tua scheda di allenamento aggiornata. 💪`);
+    window.open(`https://wa.me/${phone.startsWith('39') ? phone : '39' + phone}?text=${msg}`, '_blank');
   };
 
   return (
@@ -517,12 +550,19 @@ export default function Clienti() {
                 </div>
               )}
 
-              <div className="modal-footer">
-                <button className="btn btn-ghost" onClick={() => generatePDF(c)} style={{ color: 'var(--red)' }}>
+              <div className="modal-footer" style={{ flexWrap: 'wrap', gap: 6 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => handleGeneratePDF(c)}>
                   📄 Scarica PDF
                 </button>
-                <button className="btn btn-ghost" onClick={() => { openEdit(c); setShowDetail(null); }}>Modifica</button>
-                <button className="btn btn-danger" onClick={() => setConfirmDelete(c.id)}>Elimina</button>
+                {c.telefono && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleWhatsApp(c)}
+                    style={{ color: '#16A34A', borderColor: '#BBF7D0' }}>
+                    💬 WhatsApp
+                  </button>
+                )}
+                <div style={{ flex: 1 }} />
+                <button className="btn btn-secondary btn-sm" onClick={() => { openEdit(c); setShowDetail(null); }}>Modifica</button>
+                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(c.id)}>Elimina</button>
               </div>
               {confirmDelete === c.id && (
                 <div className="alert alert-danger" style={{ marginTop: 12 }}>
