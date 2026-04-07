@@ -31,6 +31,7 @@ export default function Calendario() {
   const [toast, setToast] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [showSchedaModal, setShowSchedaModal] = useState(null); // { scheda, giorno }
+  const [editApt, setEditApt] = useState(null); // appuntamento da modificare
   const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', durata: '60', note: '', schedaId: '', giornoScheda: '' });
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
@@ -119,6 +120,37 @@ export default function Calendario() {
     setConfirmDel(null);
   };
 
+  const openEditApt = (apt) => {
+    const d = new Date(apt.date);
+    setEditApt({
+      id: apt.id,
+      clientId: apt.clientId,
+      date: d.toISOString().split('T')[0],
+      time: d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+      durata: String(apt.durata || 60),
+      note: apt.note || '',
+      schedaId: apt.schedaId || '',
+      giornoScheda: apt.giornoScheda || '',
+    });
+  };
+
+  const handleUpdateApt = async () => {
+    if (!editApt) return;
+    const dateTime = new Date(`${editApt.date}T${editApt.time}:00`);
+    const fineTime = calcFine(editApt.time, editApt.durata);
+    await updateAppointment(editApt.id, {
+      clientId: editApt.clientId,
+      date: dateTime.toISOString(),
+      durata: Number(editApt.durata),
+      oraFine: fineTime,
+      note: editApt.note,
+      schedaId: editApt.schedaId || null,
+      giornoScheda: editApt.giornoScheda || null,
+    });
+    showToast('Appuntamento aggiornato!');
+    setEditApt(null);
+  };
+
   const tileContent = ({ date }) => {
     if (datesWithAppointments.has(format(date, 'yyyy-MM-dd'))) {
       return <div className="has-appointment" />;
@@ -193,8 +225,12 @@ export default function Calendario() {
                           {apt.note && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {apt.note}</span>}
                         </div>
                       </div>
-                      <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14 }}
-                        onClick={e => { e.stopPropagation(); setConfirmDel(apt.id); }} title="Elimina">✕</button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 13 }}
+                          onClick={e => { e.stopPropagation(); openEditApt(apt); }} title="Modifica">✏️</button>
+                        <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14 }}
+                          onClick={e => { e.stopPropagation(); setConfirmDel(apt.id); }} title="Elimina">✕</button>
+                      </div>
                     </div>
                     {confirmDel === apt.id && (
                       <div className="alert alert-danger" style={{ marginBottom: 8, fontSize: 12 }}>
@@ -333,6 +369,132 @@ export default function Calendario() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* EDIT APPOINTMENT MODAL */}
+      {editApt && (() => {
+        const GIORNI_MAP = { 0: 'Domenica', 1: 'Lunedì', 2: 'Martedì', 3: 'Mercoledì', 4: 'Giovedì', 5: 'Venerdì', 6: 'Sabato' };
+        const client = clients.find(c => c.id === editApt.clientId);
+        const schedaCliente = schede.filter(s => s.clienteId === editApt.clientId);
+        const schedaSel = schede.find(s => s.id === editApt.schedaId);
+        const giorniDisp = schedaSel ? Object.keys(schedaSel.giorni || {}) : [];
+        const dataSelezionata = new Date(editApt.date + 'T12:00:00');
+        const giornoSettimana = GIORNI_MAP[dataSelezionata.getDay()];
+
+        return (
+          <div className="modal-overlay" onClick={() => setEditApt(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+              <div className="modal-header">
+                <div>
+                  <h3>Modifica appuntamento</h3>
+                  <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2 }}>
+                    {client ? `${client.nome} ${client.cognome}` : '—'}
+                  </div>
+                </div>
+                <button className="modal-close" onClick={() => setEditApt(null)}>✕</button>
+              </div>
+
+              {/* Data e ora */}
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="input-group" style={{ flex: 2 }}>
+                  <label>Data</label>
+                  <input type="date" value={editApt.date} onChange={e => setEditApt({ ...editApt, date: e.target.value })} />
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label>Ora inizio</label>
+                  <select value={editApt.time} onChange={e => setEditApt({ ...editApt, time: e.target.value })}>
+                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label>Durata</label>
+                  <select value={editApt.durata} onChange={e => setEditApt({ ...editApt, durata: e.target.value })}>
+                    <option value="30">30 min</option>
+                    <option value="60">1 ora</option>
+                    <option value="90">1h 30</option>
+                    <option value="120">2 ore</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Anteprima orario */}
+              {editApt.time && (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 14, display: 'flex', gap: 16 }}>
+                  <span>⏱ Inizio: {editApt.time}</span>
+                  <span>→</span>
+                  <span>Fine: {calcFine(editApt.time, editApt.durata)}</span>
+                </div>
+              )}
+
+              {/* Note */}
+              <div className="input-group">
+                <label>Note</label>
+                <input value={editApt.note} onChange={e => setEditApt({ ...editApt, note: e.target.value })} placeholder="es. Gambe, upper body..." />
+              </div>
+
+              {/* Scheda allenamento */}
+              {schedaCliente.length > 0 && (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                    🏋️ Scheda allenamento
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                      <label>Scheda</label>
+                      <select value={editApt.schedaId} onChange={e => {
+                        const s = schede.find(sc => sc.id === e.target.value);
+                        const autoGiorno = s?.giorni?.[giornoSettimana] ? giornoSettimana : (s ? Object.keys(s.giorni||{})[0] || '' : '');
+                        setEditApt({ ...editApt, schedaId: e.target.value, giornoScheda: autoGiorno });
+                      }}>
+                        <option value="">Nessuna scheda</option>
+                        {schedaCliente.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                      </select>
+                    </div>
+                    {editApt.schedaId && giorniDisp.length > 0 && (
+                      <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                        <label>Giorno {giornoSettimana && giorniDisp.includes(giornoSettimana) ? `(auto: ${giornoSettimana})` : ''}</label>
+                        <select value={editApt.giornoScheda} onChange={e => setEditApt({ ...editApt, giornoScheda: e.target.value })}>
+                          <option value="">— Seleziona —</option>
+                          {giorniDisp.map(g => (
+                            <option key={g} value={g}>{g} · {(schedaSel.giorni[g]||[]).length} esercizi{g === giornoSettimana ? ' ★' : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  {/* Preview esercizi */}
+                  {editApt.schedaId && editApt.giornoScheda && schedaSel?.giorni?.[editApt.giornoScheda] && (
+                    <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {(schedaSel.giorni[editApt.giornoScheda] || []).map((e, i) => (
+                        <span key={i} style={{ fontSize: 11, background: 'var(--surface)', border: '1px solid #bfdbfe', borderRadius: 5, padding: '3px 8px', color: 'var(--accent)' }}>
+                          {e.nome || 'Esercizio'} {e.serie ? `${e.serie}×${e.ripetizioni}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Pulsante rimuovi scheda */}
+                  {editApt.schedaId && (
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, fontSize: 11 }}
+                      onClick={() => setEditApt({ ...editApt, schedaId: '', giornoScheda: '' })}>
+                      ✕ Rimuovi scheda associata
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {schedaCliente.length === 0 && (
+                <div className="alert alert-warning" style={{ marginBottom: 14, fontSize: 12 }}>
+                  Nessuna scheda disponibile per questo cliente. Creane una nella sezione Schede.
+                </div>
+              )}
+
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setEditApt(null)}>Annulla</button>
+                <button className="btn btn-primary" onClick={handleUpdateApt}>✓ Salva modifiche</button>
+              </div>
             </div>
           </div>
         );

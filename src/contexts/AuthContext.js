@@ -16,7 +16,7 @@ const OWNER_EMAIL = 'deddyno83@gmail.com';
 
 const SHARED_ACCOUNTS = [
   'deddyno83@gmail.com',         // Edoardo Botta — account principale
-  'daniblues.art22@gmail.com',   // collaboratore
+  'Daniblues.art22@gmail.com',   // collaboratore
   // aggiungi altri collaboratori qui
 ];
 

@@ -14,7 +14,7 @@ function GoogleIcon() {
 }
 
 export default function Login() {
-  const { loginWithGoogle } = useAuth();
+  const { loginWithGoogle, authError } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -43,9 +43,9 @@ export default function Login() {
           Gestisci clienti, lezioni e appuntamenti in un unico posto
         </p>
 
-        {error && (
+        {(error || authError) && (
           <div className="alert alert-danger" style={{ marginBottom: 16 }}>
-            {error}
+            {authError || error}
           </div>
         )}
 
