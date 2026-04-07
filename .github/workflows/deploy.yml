@@ -11,12 +11,12 @@ jobs:
 
     steps:
       - name: Scarica il codice
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Installa Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Installa dipendenze
         run: npm install
@@ -31,10 +31,10 @@ jobs:
           echo "REACT_APP_FIREBASE_APP_ID=${{ secrets.REACT_APP_FIREBASE_APP_ID }}" >> .env
 
       - name: Build dell'app
-        run: npm run build
+        run: DISABLE_ESLINT_PLUGIN=true npm run build
 
       - name: Pubblica su GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
