@@ -50,7 +50,7 @@ export function AuthProvider({ children }) {
         } else {
           await signOut(auth);
           setUser(null);
-          setAuthError(\`Accesso negato. L'email \${firebaseUser.email} non è autorizzata.\`);
+          setAuthError(`Accesso negato. L'email ${firebaseUser.email} non è autorizzata.`);
         }
       } else {
         setUser(null);
