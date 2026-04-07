@@ -24,7 +24,7 @@ function ImgWithFallback({ src, size = 44 }) {
 
 export default function Calendario() {
   const { clients } = useClients();
-  const { appointments, addAppointment, deleteAppointment } = useAppointments();
+  const { appointments, addAppointment, updateAppointment, deleteAppointment } = useAppointments();
   const { schede, updateScheda } = useSchede();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
