@@ -35,6 +35,7 @@ export default function Dashboard() {
 
   const [toast, setToast] = useState(null);
   const [showQuickBook, setShowQuickBook] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(null); // 'individuali' | 'corsi' | 'nonPagato' | 'totale'
   const [qb, setQb] = useState({
     clientId: '',
     date: new Date().toISOString().split('T')[0],
@@ -181,11 +182,11 @@ export default function Dashboard() {
           <div className="stat-value">{clients.length}</div>
           <div className="stat-sub">{individuali.length} ind. · {corsi.length} corsi</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal('totale')}>
           <div className="stat-icon green">€</div>
           <div className="stat-label">Totale {format(today, 'MMMM', { locale: it })}</div>
           <div className="stat-value" style={{ color: 'var(--green)' }}>€{revenue.totale.toLocaleString('it-IT')}</div>
-          <div className="stat-sub">incassato questo mese</div>
+          <div className="stat-sub">incassato · clicca per dettaglio</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue">📅</div>
@@ -208,21 +209,27 @@ export default function Dashboard() {
             Entrate {format(today, 'MMMM yyyy', { locale: it })}
           </div>
           <div className="revenue-split">
-            <div className="revenue-box blue-box">
+            <div className="revenue-box blue-box" onClick={() => setShowDetailModal('individuali')}
+              style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity='0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity='1'}>
               <div className="revenue-box-label">Clienti individuali</div>
               <div className="revenue-box-value" style={{ color: 'var(--accent)' }}>€{revenue.individuali.toLocaleString('it-IT')}</div>
-              <div className="revenue-box-sub">{individuali.length} clienti</div>
+              <div className="revenue-box-sub">{individuali.length} clienti · clicca per dettaglio</div>
             </div>
-            <div className="revenue-box green-box">
+            <div className="revenue-box green-box" onClick={() => setShowDetailModal('corsi')}
+              style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity='0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity='1'}>
               <div className="revenue-box-label">Corsi di gruppo</div>
               <div className="revenue-box-value" style={{ color: 'var(--green)' }}>€{revenue.corsi.toLocaleString('it-IT')}</div>
-              <div className="revenue-box-sub">{corsi.length} corsi attivi</div>
+              <div className="revenue-box-sub">{corsi.length} corsi attivi · clicca per dettaglio</div>
             </div>
             {revenue.nonPagato > 0 && (
               <div className="revenue-box" style={{ background: 'var(--red-light)', border: '1px solid var(--red-border)', gridColumn: '1 / -1' }}>
                 <div className="revenue-box-label" style={{ color: 'var(--red)' }}>⚠ Da incassare (non pagati)</div>
                 <div className="revenue-box-value" style={{ color: 'var(--red)', fontSize: 18 }}>€{revenue.nonPagato.toLocaleString('it-IT')}</div>
-                <div className="revenue-box-sub">Pacchetti acquistati questo mese non ancora pagati</div>
+                <div className="revenue-box-sub" style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal('nonPagato')}>clicca per dettaglio →</div>
               </div>
             )}
           </div>
@@ -368,6 +375,120 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* DETAIL REVENUE MODAL */}
+      {showDetailModal && (() => {
+        const mese = format(today, 'MMMM yyyy', { locale: it });
+        const start = startOfMonth(today);
+        const end = endOfMonth(today);
+
+        // Build detail rows
+        let title = '', rows = [], total = 0;
+
+        if (showDetailModal === 'individuali') {
+          title = `Clienti individuali — ${mese}`;
+          individuali.forEach(c => {
+            const pkgs = c.packages || [];
+            pkgs.forEach(p => {
+              const d = new Date(p.purchasedAt);
+              if (d >= start && d <= end && p.paid !== false) {
+                rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${p.lessons} lezioni`, costo: p.cost || 0, paid: true });
+                total += p.cost || 0;
+              }
+            });
+            // Legacy format
+            if (pkgs.length === 0 && c.packagePurchasedAt) {
+              const d = new Date(c.packagePurchasedAt);
+              if (d >= start && d <= end) {
+                rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.packageLessons} lezioni`, costo: c.packageCost || 0, paid: true });
+                total += c.packageCost || 0;
+              }
+            }
+          });
+        } else if (showDetailModal === 'corsi') {
+          title = `Corsi di gruppo — ${mese}`;
+          corsi.forEach(c => {
+            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.partecipanti || 0} partecipanti`, costo: c.monthlyFee || 0, paid: true });
+            total += c.monthlyFee || 0;
+          });
+        } else if (showDetailModal === 'nonPagato') {
+          title = `Da incassare — ${mese}`;
+          individuali.forEach(c => {
+            const pkgs = c.packages || [];
+            pkgs.forEach(p => {
+              const d = new Date(p.purchasedAt);
+              if (d >= start && d <= end && p.paid === false) {
+                rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${p.lessons} lezioni`, costo: p.cost || 0, paid: false });
+                total += p.cost || 0;
+              }
+            });
+          });
+        } else if (showDetailModal === 'totale') {
+          title = `Riepilogo totale — ${mese}`;
+          // Individuali pagati
+          individuali.forEach(c => {
+            (c.packages || []).forEach(p => {
+              const d = new Date(p.purchasedAt);
+              if (d >= start && d <= end && p.paid !== false) {
+                rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Individuale', costo: p.cost || 0, paid: true });
+                total += p.cost || 0;
+              }
+            });
+          });
+          // Corsi
+          corsi.forEach(c => {
+            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Corso mensile', costo: c.monthlyFee || 0, paid: true });
+            total += c.monthlyFee || 0;
+          });
+        }
+
+        return (
+          <div className="modal-overlay" onClick={() => setShowDetailModal(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+              <div className="modal-header">
+                <h3>📊 {title}</h3>
+                <button className="modal-close" onClick={() => setShowDetailModal(null)}>✕</button>
+              </div>
+
+              {rows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-3)', fontSize: 13 }}>
+                  Nessun dato per questo periodo
+                </div>
+              ) : (
+                <>
+                  {rows.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', background: i%2===0 ? 'var(--bg)' : 'var(--surface)', borderRadius: 8, marginBottom: 4 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{r.nome}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{r.dettaglio}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: r.paid ? 'var(--green)' : 'var(--red)' }}>
+                          €{(r.costo).toLocaleString('it-IT')}
+                        </div>
+                        <div style={{ fontSize: 10, color: r.paid ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                          {r.paid ? '✓ Pagato' : '✗ Non pagato'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '2px solid var(--border)', marginTop: 12, paddingTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Totale</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: showDetailModal === 'nonPagato' ? 'var(--red)' : 'var(--green)' }}>
+                      €{total.toLocaleString('it-IT')}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setShowDetailModal(null)}>Chiudi</button>
+                <button className="btn btn-secondary" onClick={() => { setShowDetailModal(null); navigate('/clienti'); }}>Vai ai clienti →</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* QUICK BOOK MODAL */}
       {showQuickBook && (

@@ -395,7 +395,7 @@ export default function Clienti() {
             return (
               <div key={client.id} className="client-card"
                 style={expiring ? { borderColor: q.allExhausted ? 'var(--red-border)' : 'var(--amber-border)' } : {}}
-                onClick={() => setShowDetail(client)}>
+                onClick={() => setShowDetail(client.id)}>
                 {expiring && (
                   <div style={{ position: 'absolute', top: 12, right: 12 }}>
                     <span className={`badge ${q.allExhausted ? 'badge-red' : 'badge-yellow'}`}>
@@ -434,7 +434,8 @@ export default function Clienti() {
 
       {/* DETAIL MODAL */}
       {showDetail && (() => {
-        const c = showDetail;
+        const c = clients.find(x => x.id === showDetail);
+        if (!c) return null;
         const q = getPackageQueue(c, appointments);
         const aptList = appointments.filter(a => a.clientId === c.id).sort((a, b) => new Date(b.date) - new Date(a.date));
         return (
