@@ -587,10 +587,6 @@ export default function Clienti() {
                         )}
                       </div>
                     );
-                  })}  <button className="btn btn-danger btn-sm" onClick={() => handleDeletePackage(c, pkg.id)}>✕</button>
-                        )}
-                      </div>
-                    );
                   })}
                   <button className="btn btn-primary" style={{ width: '100%', marginTop: 10, justifyContent: 'center' }}
                     onClick={() => { openAddPackage(c); setShowDetail(null); }}>
