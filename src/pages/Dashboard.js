@@ -67,7 +67,7 @@ export default function Dashboard() {
   const revenue = useMemo(() => {
     const start = startOfMonth(today);
     const end = endOfMonth(today);
-    let individuali = 0, corsi = 0;
+    let individuali = 0, corsi = 0, nonPagato = 0;
     clients.forEach(c => {
       if (c.type === 'corso') {
         corsi += (c.monthlyFee || 0);
@@ -79,13 +79,26 @@ export default function Dashboard() {
         } else {
           pkgs.forEach(p => {
             const d = new Date(p.purchasedAt);
-            if (d >= start && d <= end) individuali += (p.cost || 0);
+            if (d >= start && d <= end) {
+              if (p.paid !== false) individuali += (p.cost || 0);  // solo pagati
+              else nonPagato += (p.cost || 0);                      // non pagati
+            }
           });
         }
       }
     });
-    return { individuali, corsi, totale: individuali + corsi };
+    return { individuali, corsi, totale: individuali + corsi, nonPagato };
   }, [clients, appointments]);
+
+  // Clienti con pacchetto esaurito non pagato
+  const unpaidAlerts = useMemo(() =>
+    clients.filter(c => {
+      if (c.type === 'corso') return false;
+      const q = getPackageQueue(c, appointments);
+      return q && (q.unpaidExhausted || q.unpaidAlmostDone);
+    }),
+    [clients, appointments]
+  );
 
   const schedeInScadenza = useMemo(() => {
     const now = new Date();
@@ -204,6 +217,13 @@ export default function Dashboard() {
               <div className="revenue-box-value" style={{ color: 'var(--green)' }}>€{revenue.corsi.toLocaleString('it-IT')}</div>
               <div className="revenue-box-sub">{corsi.length} corsi attivi</div>
             </div>
+            {revenue.nonPagato > 0 && (
+              <div className="revenue-box" style={{ background: 'var(--red-light)', border: '1px solid var(--red-border)', gridColumn: '1 / -1' }}>
+                <div className="revenue-box-label" style={{ color: 'var(--red)' }}>⚠ Da incassare (non pagati)</div>
+                <div className="revenue-box-value" style={{ color: 'var(--red)', fontSize: 18 }}>€{revenue.nonPagato.toLocaleString('it-IT')}</div>
+                <div className="revenue-box-sub">Pacchetti acquistati questo mese non ancora pagati</div>
+              </div>
+            )}
           </div>
           {revenue.totale > 0 && (
             <div style={{ marginTop: 14 }}>
@@ -244,6 +264,27 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Avvisi pacchetti non pagati */}
+      {unpaidAlerts.length > 0 && (
+        <div className="alert alert-danger" style={{ marginBottom: 12, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <strong>💳 {unpaidAlerts.length} cliente/i con pacchetto non pagato</strong>
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              {unpaidAlerts.map(c => {
+                const q = getPackageQueue(c, appointments);
+                return (
+                  <span key={c.id} style={{ marginRight: 12 }}>
+                    {c.nome} {c.cognome}
+                    {q.unpaidExhausted ? ' · ⚠ esaurito e non pagato' : ` · ${q.activePackage?.remaining} rimaste`}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <button className="btn btn-sm btn-danger" onClick={() => navigate('/clienti')}>Gestisci →</button>
+        </div>
+      )}
 
       {/* Schede in scadenza */}
       {schedeInScadenza.length > 0 && (
