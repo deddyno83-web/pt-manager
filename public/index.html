@@ -2,14 +2,41 @@
 <html lang="it">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#ff5722" />
-    <meta name="description" content="PT Manager - Personal Trainer App" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2563EB" />
+    <meta name="description" content="PT Manager — Gestisci clienti, schede allenamento, appuntamenti e pacchetti lezioni" />
+    
+    <!-- Favicon standard -->
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon.png" />
+
+    <!-- Apple iOS -->
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="%PUBLIC_URL%/apple-touch-icon-120.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="%PUBLIC_URL%/apple-touch-icon-152.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="%PUBLIC_URL%/apple-touch-icon-167.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/apple-touch-icon-180.png" />
+
+    <!-- iOS PWA meta -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="PT Manager" />
+
+    <!-- Manifest -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- Open Graph (per condivisione link) -->
+    <meta property="og:title" content="PT Manager" />
+    <meta property="og:description" content="La piattaforma digitale per Personal Trainer professionisti" />
+    <meta property="og:image" content="%PUBLIC_URL%/logo512.png" />
+
     <title>PT Manager</title>
+
+    <!-- jsPDF per generazione PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   </head>
   <body>
-    <noscript>Abilita JavaScript per usare questa app.</noscript>
+    <noscript>PT Manager richiede JavaScript per funzionare.</noscript>
     <div id="root"></div>
   </body>
 </html>
