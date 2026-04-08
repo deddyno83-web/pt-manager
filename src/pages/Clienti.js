@@ -498,7 +498,7 @@ export default function Clienti() {
                                 updateClient(c.id, { packages: newPkgs });
                                 showToast(isPaid ? 'Segnato come non pagato' : 'Segnato come pagato ✓', isPaid ? 'warning' : 'success');
                               }}
-                              style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, border: 'none', cursor: 'pointer', background: isPaid ? 'var(--green-light)' : 'var(--red-light)', color: isPaid ? 'var(--green)' : 'var(--red)', borderColor: isPaid ? 'var(--green-border)' : 'var(--red-border)' }}>
+                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, border: `1px solid ${isPaid ? 'var(--green-border)' : 'var(--red-border)'}`, cursor: 'pointer', background: isPaid ? 'var(--green-light)' : 'var(--red-light)', color: isPaid ? 'var(--green)' : 'var(--red)' }}>
                               {isPaid ? '✓ Pagato' : '✗ Non pagato'}
                             </button>
                             {isUnpaidDanger && (
@@ -506,21 +506,18 @@ export default function Clienti() {
                                 ⚠ Esaurito e non pagato!
                               </span>
                             )}
-                            {/* Scala manuale lezione */}
-                            {!pkg.exhausted && (
-                              <button
-                                onClick={() => {
-                                  const newPkgs = (c.packages || []).map(p =>
-                                    p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
-                                  );
-                                  updateClient(c.id, { packages: newPkgs });
-                                  showToast('Lezione scalata manualmente');
-                                }}
-                                style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--surface2)', color: 'var(--text-2)' }}>
-                                -1 Lezione
-                              </button>
-                            )}
-                            {/* Ripristina ultima scala manuale */}
+                            {/* Scala/Aggiungi lezione manuale */}
+                            <button
+                              onClick={() => {
+                                const newPkgs = (c.packages || []).map(p =>
+                                  p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
+                                );
+                                updateClient(c.id, { packages: newPkgs });
+                                showToast('Lezione scalata');
+                              }}
+                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--surface2)', color: 'var(--text-2)' }}>
+                              − Scala lezione
+                            </button>
                             {(pkg.manualUsed || 0) > 0 && (
                               <button
                                 onClick={() => {
@@ -528,10 +525,10 @@ export default function Clienti() {
                                     p.id === pkg.id ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
                                   );
                                   updateClient(c.id, { packages: newPkgs });
-                                  showToast('Lezione ripristinata');
+                                  showToast('Lezione aggiunta');
                                 }}
-                                style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, border: '1px solid var(--amber-border)', cursor: 'pointer', background: 'var(--amber-light)', color: 'var(--amber)' }}>
-                                ↩ Ripristina
+                                style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--green-border)', cursor: 'pointer', background: 'var(--green-light)', color: 'var(--green)' }}>
+                                + Aggiungi lezione
                               </button>
                             )}
                           </div>
