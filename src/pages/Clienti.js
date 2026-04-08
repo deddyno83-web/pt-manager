@@ -477,69 +477,116 @@ export default function Clienti() {
                     const status = pkg.exhausted ? 'exhausted' : pkg.id === q.activePackage?.id ? 'active' : 'queued';
                     const isPaid = pkg.paid !== false;
                     const isUnpaidDanger = pkg.exhausted && !isPaid;
+
+                    const togglePaid = async () => {
+                      const newPkgs = c.packages.map(p =>
+                        p.id === pkg.id ? { ...p, paid: !isPaid } : p
+                      );
+                      await updateClient(c.id, { packages: newPkgs });
+                      showToast(!isPaid ? '✓ Segnato come pagato' : 'Segnato come non pagato', !isPaid ? 'success' : 'warning');
+                    };
+
+                    const scalaLezione = async () => {
+                      const newPkgs = c.packages.map(p =>
+                        p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
+                      );
+                      await updateClient(c.id, { packages: newPkgs });
+                      showToast('Lezione scalata');
+                    };
+
+                    const aggiungiLezione = async () => {
+                      if ((pkg.manualUsed || 0) === 0) return;
+                      const newPkgs = c.packages.map(p =>
+                        p.id === pkg.id ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
+                      );
+                      await updateClient(c.id, { packages: newPkgs });
+                      showToast('Lezione aggiunta');
+                    };
+
                     return (
-                      <div key={pkg.id} className={`pkg-item ${status}`} style={isUnpaidDanger ? { borderColor: 'var(--red-border)', background: 'var(--red-light)' } : {}}>
+                      <div key={pkg.id} className={`pkg-item ${status}`}
+                        style={isUnpaidDanger ? { borderColor: 'var(--red-border)', background: 'var(--red-light)' } : {}}>
                         <div className={`pkg-num ${status}`}>{i + 1}</div>
                         <div style={{ flex: 1 }}>
+                          {/* Riga info */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                               {status === 'exhausted' ? '✓ Esaurito' : status === 'active' ? '▶ In corso' : '⏳ In coda'}
-                              {' · '}{pkg.lessons} lezioni {pkg.cost > 0 ? `· €${pkg.cost}` : ''}
+                              {' · '}{pkg.lessons} lezioni{pkg.cost > 0 ? ` · €${pkg.cost}` : ''}
                             </span>
-                            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>{pkg.remaining}/{pkg.lessons}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: status === 'exhausted' ? 'var(--red)' : 'var(--accent)' }}>
+                              {pkg.remaining}/{pkg.lessons}
+                            </span>
                           </div>
+
+                          {/* Barra progresso */}
                           <ProgressBar remaining={pkg.remaining} total={pkg.lessons} />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                            {pkg.purchasedAt && <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Acquistato: {pkg.purchasedAt}</span>}
-                            {/* Badge pagato/non pagato */}
-                            <button
-                              onClick={() => {
-                                const newPkgs = (c.packages || []).map(p => p.id === pkg.id ? { ...p, paid: !isPaid } : p);
-                                updateClient(c.id, { packages: newPkgs });
-                                showToast(isPaid ? 'Segnato come non pagato' : 'Segnato come pagato ✓', isPaid ? 'warning' : 'success');
-                              }}
-                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, border: `1px solid ${isPaid ? 'var(--green-border)' : 'var(--red-border)'}`, cursor: 'pointer', background: isPaid ? 'var(--green-light)' : 'var(--red-light)', color: isPaid ? 'var(--green)' : 'var(--red)' }}>
-                              {isPaid ? '✓ Pagato' : '✗ Non pagato'}
-                            </button>
-                            {isUnpaidDanger && (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>
-                                ⚠ Esaurito e non pagato!
+
+                          {/* Riga pulsanti */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                            {pkg.purchasedAt && (
+                              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                                {pkg.purchasedAt}
                               </span>
                             )}
-                            {/* Scala/Aggiungi lezione manuale */}
-                            <button
-                              onClick={() => {
-                                const newPkgs = (c.packages || []).map(p =>
-                                  p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
-                                );
-                                updateClient(c.id, { packages: newPkgs });
-                                showToast('Lezione scalata');
-                              }}
-                              style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--surface2)', color: 'var(--text-2)' }}>
+
+                            {/* Toggle pagato */}
+                            <button onClick={togglePaid} style={{
+                              fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                              borderRadius: 5, cursor: 'pointer',
+                              border: `1.5px solid ${isPaid ? 'var(--green-border)' : 'var(--red-border)'}`,
+                              background: isPaid ? 'var(--green-light)' : 'var(--red-light)',
+                              color: isPaid ? 'var(--green)' : 'var(--red)',
+                            }}>
+                              {isPaid ? '✓ Pagato' : '✗ Non pagato'}
+                            </button>
+
+                            {/* Scala lezione */}
+                            <button onClick={scalaLezione} style={{
+                              fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                              borderRadius: 5, cursor: 'pointer',
+                              border: '1.5px solid var(--border)',
+                              background: 'var(--surface2)', color: 'var(--text-2)',
+                            }}>
                               − Scala lezione
                             </button>
+
+                            {/* Aggiungi lezione (visibile solo se ci sono scale manuali) */}
                             {(pkg.manualUsed || 0) > 0 && (
-                              <button
-                                onClick={() => {
-                                  const newPkgs = (c.packages || []).map(p =>
-                                    p.id === pkg.id ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
-                                  );
-                                  updateClient(c.id, { packages: newPkgs });
-                                  showToast('Lezione aggiunta');
-                                }}
-                                style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 5, border: '1px solid var(--green-border)', cursor: 'pointer', background: 'var(--green-light)', color: 'var(--green)' }}>
+                              <button onClick={aggiungiLezione} style={{
+                                fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                                borderRadius: 5, cursor: 'pointer',
+                                border: '1.5px solid var(--green-border)',
+                                background: 'var(--green-light)', color: 'var(--green)',
+                              }}>
                                 + Aggiungi lezione
                               </button>
                             )}
                           </div>
+
+                          {/* Info scale manuali */}
                           {(pkg.manualUsed || 0) > 0 && (
-                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
                               {pkg.manualUsed} lezione/i scalate manualmente
                             </div>
                           )}
+
+                          {/* Avviso non pagato esaurito */}
+                          {isUnpaidDanger && (
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginTop: 6 }}>
+                              ⚠ Lezioni esaurite — pacchetto non pagato!
+                            </div>
+                          )}
                         </div>
+
+                        {/* Elimina solo se non usato */}
                         {pkg.used === 0 && (pkg.manualUsed || 0) === 0 && (
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDeletePackage(c, pkg.id)}>✕</button>
+                          <button className="btn btn-danger btn-sm"
+                            onClick={() => handleDeletePackage(c, pkg.id)}>✕</button>
+                        )}
+                      </div>
+                    );
+                  })}  <button className="btn btn-danger btn-sm" onClick={() => handleDeletePackage(c, pkg.id)}>✕</button>
                         )}
                       </div>
                     );
