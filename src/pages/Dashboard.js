@@ -8,10 +8,11 @@ import { format, startOfMonth, endOfMonth, parseISO, addDays, isBefore } from 'd
 import { it } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 
-const TIME_SLOTS = Array.from({ length: 34 }, (_, i) => {
-  const h = Math.floor(i / 2) + 6;
-  const m = i % 2 === 0 ? '00' : '30';
-  return `${String(h).padStart(2, '0')}:${m}`;
+const TIME_SLOTS = Array.from({ length: 66 }, (_, i) => {
+  const totalMin = 6 * 60 + i * 15;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 });
 
 function calcFine(time, durata) {
@@ -401,7 +402,9 @@ export default function Dashboard() {
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label>Durata</label>
                 <select value={qb.durata} onChange={e => setQb({ ...qb, durata: e.target.value })}>
+                  <option value="15">15 min</option>
                   <option value="30">30 min</option>
+                  <option value="45">45 min</option>
                   <option value="60">1 ora</option>
                   <option value="90">1h 30</option>
                   <option value="120">2 ore</option>

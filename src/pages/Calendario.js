@@ -65,7 +65,9 @@ export default function Calendario() {
   const timeSlots = [];
   for (let h = 6; h <= 22; h++) {
     timeSlots.push(`${String(h).padStart(2,'0')}:00`);
+    timeSlots.push(`${String(h).padStart(2,'0')}:15`);
     timeSlots.push(`${String(h).padStart(2,'0')}:30`);
+    timeSlots.push(`${String(h).padStart(2,'0')}:45`);
   }
 
   const dayAppointments = useMemo(() =>
@@ -412,7 +414,9 @@ export default function Calendario() {
                 <div className="input-group" style={{ flex: 1 }}>
                   <label>Durata</label>
                   <select value={editApt.durata} onChange={e => setEditApt({ ...editApt, durata: e.target.value })}>
+                    <option value="15">15 min</option>
                     <option value="30">30 min</option>
+                    <option value="45">45 min</option>
                     <option value="60">1 ora</option>
                     <option value="90">1h 30</option>
                     <option value="120">2 ore</option>
