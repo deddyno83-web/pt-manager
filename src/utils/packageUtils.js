@@ -50,12 +50,14 @@ export function getPackageQueue(client, appointments) {
   const totalPaid = packagesWithStatus.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
   const totalUnpaid = packagesWithStatus.filter(p => !p.paid).reduce((s, p) => s + (p.cost || 0), 0);
 
-  // Avviso: pacchetto attivo esaurito (o quasi) e NON pagato
-  const unpaidExhausted = packagesWithStatus.some(p => p.exhausted && !p.paid) ||
-    (activePackage && !activePackage.paid && activePackage.remaining <= 0);
+  // Avviso SOLO se è l'ultima lezione (remaining === 1) e il pacchetto NON è pagato
+  const unpaidLastLesson = activePackage && !activePackage.paid && activePackage.remaining === 1;
 
-  // Avviso lezioni finite su pacchetto non pagato
-  const unpaidAlmostDone = activePackage && !activePackage.paid && activePackage.remaining <= 2;
+  // Avviso se le lezioni sono finite (remaining === 0) e il pacchetto NON è pagato
+  const unpaidExhausted = packagesWithStatus.some(p => p.exhausted && !p.paid);
+
+  // Alias per compatibilità con il codice esistente
+  const unpaidAlmostDone = unpaidLastLesson;
 
   return {
     packages: packagesWithStatus,
@@ -66,6 +68,7 @@ export function getPackageQueue(client, appointments) {
     isExpiring: totalRemaining <= 2 && totalRemaining >= 0,
     unpaidExhausted,
     unpaidAlmostDone,
+    unpaidLastLesson,
     totalPaid,
     totalUnpaid,
     aptUsed,

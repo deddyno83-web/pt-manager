@@ -436,6 +436,12 @@ export default function Clienti() {
       {showDetail && (() => {
         const c = clients.find(x => x.id === showDetail);
         if (!c) return null;
+
+        // Auto-migra pacchetti vecchi senza id (silenzioso, non blocca UI)
+        if (c.packages && c.packages.some(p => !p.id)) {
+          const fixed = c.packages.map((p, i) => p.id ? p : { ...p, id: `pkg_${c.id}_${i}_${Date.now()}` });
+          updateClient(c.id, { packages: fixed }).catch(() => {});
+        }
         const q = getPackageQueue(c, appointments);
         const aptList = appointments.filter(a => a.clientId === c.id).sort((a, b) => new Date(b.date) - new Date(a.date));
         return (
@@ -466,12 +472,12 @@ export default function Clienti() {
                   {/* Avviso pacchetto non pagato */}
                   {q.unpaidExhausted && (
                     <div className="alert alert-danger" style={{ marginBottom: 12 }}>
-                      <strong>⚠ Attenzione!</strong> Le lezioni sono finite ma il pacchetto non risulta pagato.
+                      <strong>⚠ Pacchetto non pagato!</strong> Le lezioni sono finite e il pacchetto non risulta ancora saldato. Richiedi il pagamento al cliente.
                     </div>
                   )}
-                  {q.unpaidAlmostDone && !q.unpaidExhausted && (
+                  {q.unpaidLastLesson && !q.unpaidExhausted && (
                     <div className="alert alert-warning" style={{ marginBottom: 12 }}>
-                      <strong>⚠ Quasi esaurito!</strong> Rimangono {q.activePackage?.remaining} lezioni su pacchetto non pagato.
+                      <strong>⚠ Ultima lezione!</strong> È rimasta 1 sola lezione e il pacchetto non è stato ancora pagato.
                     </div>
                   )}
                   {q.packages.map((pkg, i) => {
@@ -480,16 +486,19 @@ export default function Clienti() {
                     const isUnpaidDanger = pkg.exhausted && !isPaid;
 
                     const togglePaid = async () => {
-                      const newPkgs = c.packages.map(p =>
-                        p.id === pkg.id ? { ...p, paid: !isPaid } : p
+                      // Match per indice se id manca (pacchetti vecchi)
+                      const newPkgs = (c.packages || []).map((p, idx) =>
+                        (p.id && p.id === pkg.id) || (!p.id && idx === i)
+                          ? { ...p, paid: !isPaid } : p
                       );
                       await updateClient(c.id, { packages: newPkgs });
                       showToast(!isPaid ? '✓ Segnato come pagato' : 'Segnato come non pagato', !isPaid ? 'success' : 'warning');
                     };
 
                     const scalaLezione = async () => {
-                      const newPkgs = c.packages.map(p =>
-                        p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
+                      const newPkgs = (c.packages || []).map((p, idx) =>
+                        (p.id && p.id === pkg.id) || (!p.id && idx === i)
+                          ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
                       );
                       await updateClient(c.id, { packages: newPkgs });
                       showToast('Lezione scalata');
@@ -497,8 +506,9 @@ export default function Clienti() {
 
                     const aggiungiLezione = async () => {
                       if ((pkg.manualUsed || 0) === 0) return;
-                      const newPkgs = c.packages.map(p =>
-                        p.id === pkg.id ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
+                      const newPkgs = (c.packages || []).map((p, idx) =>
+                        (p.id && p.id === pkg.id) || (!p.id && idx === i)
+                          ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
                       );
                       await updateClient(c.id, { packages: newPkgs });
                       showToast('Lezione aggiunta');

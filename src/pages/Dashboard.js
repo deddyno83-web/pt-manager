@@ -92,12 +92,12 @@ export default function Dashboard() {
     return { individuali, corsi, totale: individuali + corsi, nonPagato };
   }, [clients, appointments]);
 
-  // Clienti con pacchetto esaurito non pagato
+  // Clienti con ultima lezione rimasta su pacchetto non pagato
   const unpaidAlerts = useMemo(() =>
     clients.filter(c => {
       if (c.type === 'corso') return false;
       const q = getPackageQueue(c, appointments);
-      return q && (q.unpaidExhausted || q.unpaidAlmostDone);
+      return q && (q.unpaidExhausted || q.unpaidLastLesson);
     }),
     [clients, appointments]
   );
@@ -284,7 +284,7 @@ export default function Dashboard() {
                 return (
                   <span key={c.id} style={{ marginRight: 12 }}>
                     {c.nome} {c.cognome}
-                    {q.unpaidExhausted ? ' · ⚠ esaurito e non pagato' : ` · ${q.activePackage?.remaining} rimaste`}
+                    {q.unpaidExhausted ? ' · lezioni esaurite, non pagato' : ' · ultima lezione, non pagato'}
                   </span>
                 );
               })}
