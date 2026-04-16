@@ -5,8 +5,6 @@
 // - avviso se lezioni esaurite e pacchetto non pagato
 
 export function getPackageQueue(client, appointments) {
-  if (client.type === 'corso') return null;
-
   const packages = [...(client.packages || [])];
 
   // Migrazione vecchio formato
