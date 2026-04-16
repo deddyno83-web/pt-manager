@@ -61,7 +61,8 @@ export default function Clienti() {
       await updateClient(editClient.id, { nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiornato!');
     } else {
-      const firstPkg = form.type === 'individuale' && form.packageLessons ? [{ id: Date.now().toString(), lessons: Number(form.packageLessons), cost: Number(form.packageCost) || 0, purchasedAt: form.packagePurchasedAt }] : [];
+      // Primo pacchetto disponibile sia per individuale che per corso
+      const firstPkg = form.packageLessons ? [{ id: Date.now().toString(), lessons: Number(form.packageLessons), cost: Number(form.packageCost) || 0, purchasedAt: form.packagePurchasedAt, paid: false }] : [];
       await addClient({ nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, type: form.type, packages: firstPkg, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiunto!');
     }
@@ -70,10 +71,10 @@ export default function Clienti() {
 
   const handleAddPackage = async () => {
     if (!pkgForm.packageLessons) return showToast('Inserisci il numero di lezioni', 'error');
-    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: Number(pkgForm.packageCost) || 0, purchasedAt: pkgForm.packagePurchasedAt };
+    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: Number(pkgForm.packageCost) || 0, purchasedAt: pkgForm.packagePurchasedAt, paid: false };
     const existing = pkgClient.packages || [];
     if (existing.length === 0 && pkgClient.packageLessons > 0) {
-      existing.push({ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '' });
+      existing.push({ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '', paid: true });
     }
     await updateClient(pkgClient.id, { packages: [...existing, newPkg] });
     showToast(`Pacchetto di ${newPkg.lessons} lezioni aggiunto in coda!`);
@@ -158,7 +159,7 @@ export default function Clienti() {
     y += 8;
 
     // ── PACCHETTI ──
-    if (client.type === 'individuale' && q) {
+    if (q && q.packages.length > 0) {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(37, 99, 235);
@@ -408,7 +409,7 @@ export default function Clienti() {
                 </div>
                 <h4>{client.nome} {client.cognome}</h4>
                 <div className="client-type">{client.type === 'corso' ? 'Corso di gruppo' : 'Individuale'}</div>
-                {client.type === 'individuale' && q && (
+                {q && (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>
                       <span>Lezioni rimanenti</span>
@@ -463,7 +464,7 @@ export default function Clienti() {
               </div>
 
               {/* Pacchetti in coda */}
-              {c.type === 'individuale' && q && (
+              {q && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coda pacchetti ({q.packages.length})</div>
@@ -717,12 +718,14 @@ export default function Clienti() {
                 </select>
               </div>
             )}
-            {!editClient && form.type === 'individuale' && (
+            {!editClient && (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Primo pacchetto</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                  Primo pacchetto {form.type === 'corso' && '(opzionale)'}
+                </div>
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div className="input-group" style={{ flex: 1 }}><label>Lezioni</label><input type="number" min="1" value={form.packageLessons} onChange={e => setForm({ ...form, packageLessons: e.target.value })} placeholder="10" /></div>
-                  <div className="input-group" style={{ flex: 1 }}><label>Costo (€)</label><input type="number" value={form.packageCost} onChange={e => setForm({ ...form, packageCost: e.target.value })} placeholder="300" /></div>
+                  <div className="input-group" style={{ flex: 1 }}><label>Costo (€)</label><input type="number" value={form.packageCost} onChange={e => setForm({ ...form, packageCost: e.target.value })} placeholder={form.type === 'corso' ? '400' : '300'} /></div>
                   <div className="input-group" style={{ flex: 1 }}><label>Data acquisto</label><input type="date" value={form.packagePurchasedAt} onChange={e => setForm({ ...form, packagePurchasedAt: e.target.value })} /></div>
                 </div>
               </>
