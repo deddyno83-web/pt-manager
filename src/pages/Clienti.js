@@ -38,6 +38,7 @@ export default function Clienti() {
   const [toast, setToast] = useState(null);
   const [showDetail, setShowDetail] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [payingMonth, setPayingMonth] = useState(null); // { month, fee } — per input costo inline pagamenti mensili
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
 
@@ -489,9 +490,6 @@ export default function Clienti() {
                 const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
                 const currentEntry = payments.find(p => p.month === currentMonth);
                 const isPaidThisMonth = currentEntry?.paid === true;
-
-                // Stato locale: quale mese sta chiedendo conferma pagamento con input costo
-                const [payingMonth, setPayingMonth] = React.useState(null); // { month, fee }
 
                 const startPay = (month) => {
                   const entry = payments.find(p => p.month === month);
