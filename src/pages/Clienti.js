@@ -60,6 +60,9 @@ export default function Clienti() {
     if (editClient) {
       await updateClient(editClient.id, { nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiornato!');
+      setShowModal(false);
+      setShowDetail(editClient.id); // riapre il dettaglio aggiornato
+      return;
     } else {
       // Primo pacchetto disponibile sia per individuale che per corso
       const firstPkg = form.packageLessons ? [{ id: Date.now().toString(), lessons: Number(form.packageLessons), cost: Number(form.packageCost) || 0, purchasedAt: form.packagePurchasedAt, paid: false }] : [];
@@ -551,20 +554,32 @@ export default function Clienti() {
                           {allMonths.filter(m => m !== currentMonth).map(month => {
                             const entry = payments.find(p => p.month === month);
                             const paid = entry?.paid === true;
+                            const removeMonth = async () => {
+                              const updated = payments.filter(p => p.month !== month);
+                              await updateClient(c.id, { monthlyPayments: updated });
+                              showToast('Mese rimosso', 'warning');
+                            };
                             return (
                               <div key={month} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)' }}>
                                 <div>
                                   <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>{fmtMonth(month)}</span>
                                   <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>€{entry?.fee || c.monthlyFee || 0}</span>
                                 </div>
-                                <button onClick={() => toggleMonthPayment(month)} style={{
-                                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
-                                  border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
-                                  background: paid ? 'var(--green-light)' : 'var(--red-light)',
-                                  color: paid ? 'var(--green)' : 'var(--red)',
-                                }}>
-                                  {paid ? '✓ Pagato' : '✗ Non pagato'}
-                                </button>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                  <button onClick={() => toggleMonthPayment(month)} style={{
+                                    fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                                    border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
+                                    background: paid ? 'var(--green-light)' : 'var(--red-light)',
+                                    color: paid ? 'var(--green)' : 'var(--red)',
+                                  }}>
+                                    {paid ? '✓ Pagato' : '✗ Non pagato'}
+                                  </button>
+                                  <button onClick={removeMonth} title="Rimuovi" style={{
+                                    fontSize: 12, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
+                                    border: '1.5px solid var(--border)', background: 'var(--surface2)',
+                                    color: 'var(--text-3)', lineHeight: 1,
+                                  }}>✕</button>
+                                </div>
                               </div>
                             );
                           })}
@@ -813,7 +828,7 @@ export default function Clienti() {
                   </button>
                 )}
                 <div style={{ flex: 1 }} />
-                <button className="btn btn-secondary btn-sm" onClick={() => { openEdit(c); setShowDetail(null); }}>Modifica</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)}>Modifica</button>
                 <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(c.id)}>Elimina</button>
               </div>
               {confirmDelete === c.id && (
