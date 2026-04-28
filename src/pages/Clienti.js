@@ -71,14 +71,23 @@ export default function Clienti() {
 
   const handleAddPackage = async () => {
     if (!pkgForm.packageLessons) return showToast('Inserisci il numero di lezioni', 'error');
-    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: Number(pkgForm.packageCost) || 0, purchasedAt: pkgForm.packagePurchasedAt, paid: false };
     const existing = pkgClient.packages || [];
-    if (existing.length === 0 && pkgClient.packageLessons > 0) {
-      existing.push({ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '', paid: true });
-    }
-    await updateClient(pkgClient.id, { packages: [...existing, newPkg] });
+    // Migrazione legacy
+    const base = existing.length === 0 && pkgClient.packageLessons > 0
+      ? [{ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '', paid: true, active: true }]
+      : existing;
+    // Il nuovo pacchetto parte come non attivo (in coda) — l'utente lo attiverà manualmente
+    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: Number(pkgForm.packageCost) || 0, purchasedAt: pkgForm.packagePurchasedAt, paid: false, active: false };
+    await updateClient(pkgClient.id, { packages: [...base, newPkg] });
     showToast(`Pacchetto di ${newPkg.lessons} lezioni aggiunto in coda!`);
     setShowPkgModal(false); setPkgClient(null);
+  };
+
+  // Attiva manualmente un pacchetto (disattiva tutti gli altri)
+  const handleActivatePackage = async (client, pkgId) => {
+    const newPkgs = (client.packages || []).map(p => ({ ...p, active: p.id === pkgId }));
+    await updateClient(client.id, { packages: newPkgs });
+    showToast('Pacchetto attivato!');
   };
 
   const handleDeletePackage = async (client, pkgId) => {
@@ -421,11 +430,19 @@ export default function Clienti() {
                     )}
                   </>
                 )}
-                {client.type === 'corso' && (
-                  <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
-                    {client.partecipanti} partecipanti · <strong style={{ color: 'var(--green)' }}>€{client.monthlyFee}/mese</strong>
-                  </div>
-                )}
+                {client.type === 'corso' && (() => {
+                  const currentMonth = new Date().toISOString().slice(0, 7);
+                  const payments = client.monthlyPayments || [];
+                  const isPaid = payments.find(p => p.month === currentMonth)?.paid === true;
+                  return (
+                    <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 4 }}>
+                      {client.partecipanti} partecipanti · <strong style={{ color: 'var(--green)' }}>€{client.monthlyFee}/mese</strong>
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: isPaid ? 'var(--green)' : 'var(--red)' }}>
+                        {isPaid ? '✓ Pagato' : '✗ Non pagato'}
+                      </span>
+                    </div>
+                  );
+                })()}
                 {client.telefono && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>📞 {client.telefono}</div>}
               </div>
             );
@@ -463,17 +480,122 @@ export default function Clienti() {
                 </>}
               </div>
 
-              {/* Pacchetti in coda */}
+              {/* ── PAGAMENTI MENSILI (solo corsi di gruppo) ── */}
+              {c.type === 'corso' && (() => {
+                const payments = c.monthlyPayments || [];
+                const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+                const currentEntry = payments.find(p => p.month === currentMonth);
+                const isPaidThisMonth = currentEntry?.paid === true;
+
+                const toggleMonthPayment = async (month) => {
+                  const existing = payments.find(p => p.month === month);
+                  let updated;
+                  if (existing) {
+                    updated = payments.map(p => p.month === month ? { ...p, paid: !p.paid } : p);
+                  } else {
+                    updated = [...payments, { month, paid: true, fee: c.monthlyFee || 0 }];
+                  }
+                  await updateClient(c.id, { monthlyPayments: updated });
+                  showToast(!existing || !existing.paid ? '✓ Mese segnato come pagato' : 'Mese segnato come non pagato', !existing || !existing.paid ? 'success' : 'warning');
+                };
+
+                const addPastMonth = async () => {
+                  // Aggiunge il mese precedente se non già presente
+                  const d = new Date();
+                  d.setMonth(d.getMonth() - 1);
+                  const prevMonth = d.toISOString().slice(0, 7);
+                  if (payments.find(p => p.month === prevMonth)) return showToast('Mese già presente', 'warning');
+                  const updated = [...payments, { month: prevMonth, paid: false, fee: c.monthlyFee || 0 }];
+                  await updateClient(c.id, { monthlyPayments: updated });
+                  showToast('Mese precedente aggiunto');
+                };
+
+                // Mesi da mostrare: mese corrente + storico, ordinati dal più recente
+                const allMonths = [...new Set([currentMonth, ...payments.map(p => p.month)])].sort((a, b) => b.localeCompare(a));
+
+                const fmtMonth = (ym) => {
+                  const [y, m] = ym.split('-');
+                  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+                };
+
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                      Pagamenti mensili
+                    </div>
+
+                    {/* Stato mese corrente */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`, background: isPaidThisMonth ? 'var(--green-light)' : 'var(--red-light)', marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: isPaidThisMonth ? 'var(--green)' : 'var(--red)' }}>
+                          {isPaidThisMonth ? '✓ Mese corrente pagato' : '✗ Mese corrente non pagato'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                          {fmtMonth(currentMonth)} · €{c.monthlyFee || 0}
+                        </div>
+                      </div>
+                      <button onClick={() => toggleMonthPayment(currentMonth)} style={{
+                        fontSize: 12, fontWeight: 700, padding: '5px 14px', borderRadius: 6, cursor: 'pointer',
+                        border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`,
+                        background: 'white', color: isPaidThisMonth ? 'var(--green)' : 'var(--red)',
+                      }}>
+                        {isPaidThisMonth ? 'Segna non pagato' : 'Segna pagato'}
+                      </button>
+                    </div>
+
+                    {/* Storico mesi */}
+                    {allMonths.filter(m => m !== currentMonth).length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, marginBottom: 6 }}>Storico</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {allMonths.filter(m => m !== currentMonth).map(month => {
+                            const entry = payments.find(p => p.month === month);
+                            const paid = entry?.paid === true;
+                            return (
+                              <div key={month} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                                <div>
+                                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>{fmtMonth(month)}</span>
+                                  <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>€{entry?.fee || c.monthlyFee || 0}</span>
+                                </div>
+                                <button onClick={() => toggleMonthPayment(month)} style={{
+                                  fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                                  border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
+                                  background: paid ? 'var(--green-light)' : 'var(--red-light)',
+                                  color: paid ? 'var(--green)' : 'var(--red)',
+                                }}>
+                                  {paid ? '✓ Pagato' : '✗ Non pagato'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={addPastMonth}>
+                      + Aggiungi mese precedente
+                    </button>
+                  </div>
+                );
+              })()}
+
+
               {q && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Coda pacchetti ({q.packages.length})</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pacchetti ({q.packages.length})</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: q.allExhausted ? 'var(--red)' : 'var(--accent)' }}>{q.totalRemaining} lezioni rimaste</div>
                   </div>
-                  {/* Avviso pacchetto non pagato */}
+                  {/* Avviso: nessun pacchetto attivo con lezioni */}
+                  {!q.canBook && q.packages.length > 0 && (
+                    <div className="alert alert-danger" style={{ marginBottom: 12 }}>
+                      <strong>⛔ Nessun pacchetto attivo.</strong> Attiva il prossimo pacchetto per permettere nuovi appuntamenti.
+                    </div>
+                  )}
+                  {/* Avviso pacchetto attivo non pagato e esaurito */}
                   {q.unpaidExhausted && (
                     <div className="alert alert-danger" style={{ marginBottom: 12 }}>
-                      <strong>⚠ Pacchetto non pagato!</strong> Le lezioni sono finite e il pacchetto non risulta ancora saldato. Richiedi il pagamento al cliente.
+                      <strong>⚠ Pacchetto non pagato!</strong> Le lezioni sono finite e il pacchetto non risulta ancora saldato.
                     </div>
                   )}
                   {q.unpaidLastLesson && !q.unpaidExhausted && (
@@ -482,9 +604,10 @@ export default function Clienti() {
                     </div>
                   )}
                   {q.packages.map((pkg, i) => {
-                    const status = pkg.exhausted ? 'exhausted' : pkg.id === q.activePackage?.id ? 'active' : 'queued';
+                    const isActive = pkg.isActive === true;
+                    const status = pkg.exhausted && isActive ? 'exhausted' : isActive ? 'active' : 'queued';
                     const isPaid = pkg.paid !== false;
-                    const isUnpaidDanger = pkg.exhausted && !isPaid;
+                    const isUnpaidDanger = pkg.exhausted && !isPaid && isActive;
 
                     const togglePaid = async () => {
                       // Match per indice se id manca (pacchetti vecchi)
@@ -523,16 +646,16 @@ export default function Clienti() {
                           {/* Riga info */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                              {status === 'exhausted' ? '✓ Esaurito' : status === 'active' ? '▶ In corso' : '⏳ In coda'}
+                              {status === 'exhausted' ? '✓ Esaurito' : status === 'active' ? '▶ Attivo' : '⏳ In coda'}
                               {' · '}{pkg.lessons} lezioni{pkg.cost > 0 ? ` · €${pkg.cost}` : ''}
                             </span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: status === 'exhausted' ? 'var(--red)' : 'var(--accent)' }}>
-                              {pkg.remaining}/{pkg.lessons}
+                            <span style={{ fontSize: 12, fontWeight: 700, color: status === 'exhausted' ? 'var(--red)' : isActive ? 'var(--accent)' : 'var(--text-3)' }}>
+                              {isActive ? `${pkg.remaining}/${pkg.lessons}` : `${pkg.lessons} lezioni`}
                             </span>
                           </div>
 
-                          {/* Barra progresso */}
-                          <ProgressBar remaining={pkg.remaining} total={pkg.lessons} />
+                          {/* Barra progresso solo se attivo */}
+                          {isActive && <ProgressBar remaining={pkg.remaining} total={pkg.lessons} />}
 
                           {/* Riga pulsanti */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -553,31 +676,45 @@ export default function Clienti() {
                               {isPaid ? '✓ Pagato' : '✗ Non pagato'}
                             </button>
 
-                            {/* Scala lezione */}
-                            <button onClick={scalaLezione} style={{
-                              fontSize: 11, fontWeight: 700, padding: '3px 10px',
-                              borderRadius: 5, cursor: 'pointer',
-                              border: '1.5px solid var(--border)',
-                              background: 'var(--surface2)', color: 'var(--text-2)',
-                            }}>
-                              − Scala lezione
-                            </button>
+                            {/* Scala / Aggiungi lezione — solo se pacchetto attivo */}
+                            {isActive && (
+                              <>
+                                <button onClick={scalaLezione} style={{
+                                  fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                                  borderRadius: 5, cursor: 'pointer',
+                                  border: '1.5px solid var(--border)',
+                                  background: 'var(--surface2)', color: 'var(--text-2)',
+                                }}>
+                                  − Scala lezione
+                                </button>
+                                {(pkg.manualUsed || 0) > 0 && (
+                                  <button onClick={aggiungiLezione} style={{
+                                    fontSize: 11, fontWeight: 700, padding: '3px 10px',
+                                    borderRadius: 5, cursor: 'pointer',
+                                    border: '1.5px solid var(--green-border)',
+                                    background: 'var(--green-light)', color: 'var(--green)',
+                                  }}>
+                                    + Aggiungi lezione
+                                  </button>
+                                )}
+                              </>
+                            )}
 
-                            {/* Aggiungi lezione (visibile solo se ci sono scale manuali) */}
-                            {(pkg.manualUsed || 0) > 0 && (
-                              <button onClick={aggiungiLezione} style={{
+                            {/* Attiva — solo se in coda */}
+                            {status === 'queued' && (
+                              <button onClick={() => handleActivatePackage(c, pkg.id)} style={{
                                 fontSize: 11, fontWeight: 700, padding: '3px 10px',
                                 borderRadius: 5, cursor: 'pointer',
-                                border: '1.5px solid var(--green-border)',
-                                background: 'var(--green-light)', color: 'var(--green)',
+                                border: '1.5px solid var(--accent)',
+                                background: 'var(--accent-light, #eff6ff)', color: 'var(--accent)',
                               }}>
-                                + Aggiungi lezione
+                                ▶ Attiva ora
                               </button>
                             )}
                           </div>
 
-                          {/* Info scale manuali */}
-                          {(pkg.manualUsed || 0) > 0 && (
+                          {/* Info scale manuali — solo se attivo */}
+                          {isActive && (pkg.manualUsed || 0) > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
                               {pkg.manualUsed} lezione/i scalate manualmente
                             </div>
@@ -756,10 +893,10 @@ export default function Clienti() {
             {(() => {
               const q = getPackageQueue(pkgClient, appointments);
               return (
-                <div className={`alert ${q && q.totalRemaining > 0 ? 'alert-success' : 'alert-warning'}`} style={{ marginBottom: 16 }}>
-                  {q && q.totalRemaining > 0
-                    ? `${pkgClient.nome} ha ancora ${q.totalRemaining} lezioni. Il nuovo pacchetto partirà automaticamente dopo.`
-                    : `Aggiungi un nuovo pacchetto per ${pkgClient.nome} ${pkgClient.cognome}.`}
+                <div className={`alert ${q && q.canBook ? 'alert-success' : 'alert-warning'}`} style={{ marginBottom: 16 }}>
+                  {q && q.canBook
+                    ? `${pkgClient.nome} ha ancora ${q.totalRemaining} lezioni nel pacchetto attivo. Il nuovo pacchetto rimarrà in coda finché non lo attivi manualmente.`
+                    : `Nessun pacchetto attivo per ${pkgClient.nome} ${pkgClient.cognome}. Aggiungine uno e attivalo per permettere nuovi appuntamenti.`}
                 </div>
               );
             })()}
