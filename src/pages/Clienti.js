@@ -490,20 +490,34 @@ export default function Clienti() {
                 const currentEntry = payments.find(p => p.month === currentMonth);
                 const isPaidThisMonth = currentEntry?.paid === true;
 
-                const toggleMonthPayment = async (month) => {
+                // Stato locale: quale mese sta chiedendo conferma pagamento con input costo
+                const [payingMonth, setPayingMonth] = React.useState(null); // { month, fee }
+
+                const startPay = (month) => {
+                  const entry = payments.find(p => p.month === month);
+                  // Se già pagato → desegna direttamente senza chiedere costo
+                  if (entry?.paid) {
+                    confirmPay(month, entry.fee ?? c.monthlyFee ?? 0, false);
+                    return;
+                  }
+                  // Altrimenti apri inline con costo di default
+                  setPayingMonth({ month, fee: String(entry?.fee ?? c.monthlyFee ?? '') });
+                };
+
+                const confirmPay = async (month, fee, paid = true) => {
                   const existing = payments.find(p => p.month === month);
                   let updated;
                   if (existing) {
-                    updated = payments.map(p => p.month === month ? { ...p, paid: !p.paid } : p);
+                    updated = payments.map(p => p.month === month ? { ...p, paid, fee: Number(fee) || 0 } : p);
                   } else {
-                    updated = [...payments, { month, paid: true, fee: c.monthlyFee || 0 }];
+                    updated = [...payments, { month, paid, fee: Number(fee) || 0 }];
                   }
                   await updateClient(c.id, { monthlyPayments: updated });
-                  showToast(!existing || !existing.paid ? '✓ Mese segnato come pagato' : 'Mese segnato come non pagato', !existing || !existing.paid ? 'success' : 'warning');
+                  showToast(paid ? '✓ Mese segnato come pagato' : 'Segnato come non pagato', paid ? 'success' : 'warning');
+                  setPayingMonth(null);
                 };
 
                 const addPastMonth = async () => {
-                  // Aggiunge il mese precedente se non già presente
                   const d = new Date();
                   d.setMonth(d.getMonth() - 1);
                   const prevMonth = d.toISOString().slice(0, 7);
@@ -513,13 +527,36 @@ export default function Clienti() {
                   showToast('Mese precedente aggiunto');
                 };
 
-                // Mesi da mostrare: mese corrente + storico, ordinati dal più recente
                 const allMonths = [...new Set([currentMonth, ...payments.map(p => p.month)])].sort((a, b) => b.localeCompare(a));
 
                 const fmtMonth = (ym) => {
                   const [y, m] = ym.split('-');
                   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
                 };
+
+                // Componente inline per confermare pagamento con costo
+                const PayConfirm = ({ month }) => (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--green-light)', border: '1.5px solid var(--green-border)' }}>
+                    <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600, whiteSpace: 'nowrap' }}>€ importo:</span>
+                    <input
+                      type="number"
+                      value={payingMonth.fee}
+                      onChange={e => setPayingMonth(pm => ({ ...pm, fee: e.target.value }))}
+                      onKeyDown={e => { if (e.key === 'Enter') confirmPay(month, payingMonth.fee); if (e.key === 'Escape') setPayingMonth(null); }}
+                      autoFocus
+                      style={{ width: 80, fontSize: 13, padding: '3px 8px', borderRadius: 5, border: '1.5px solid var(--green-border)', background: 'white' }}
+                      placeholder={String(c.monthlyFee || 0)}
+                    />
+                    <button onClick={() => confirmPay(month, payingMonth.fee)} style={{
+                      fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 5, cursor: 'pointer',
+                      border: '1.5px solid var(--green-border)', background: 'var(--green)', color: 'white',
+                    }}>✓ Conferma</button>
+                    <button onClick={() => setPayingMonth(null)} style={{
+                      fontSize: 11, padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
+                      border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text-3)',
+                    }}>✕</button>
+                  </div>
+                );
 
                 return (
                   <div style={{ marginBottom: 20 }}>
@@ -528,22 +565,25 @@ export default function Clienti() {
                     </div>
 
                     {/* Stato mese corrente */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`, background: isPaidThisMonth ? 'var(--green-light)' : 'var(--red-light)', marginBottom: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: isPaidThisMonth ? 'var(--green)' : 'var(--red)' }}>
-                          {isPaidThisMonth ? '✓ Mese corrente pagato' : '✗ Mese corrente non pagato'}
+                    <div style={{ padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`, background: isPaidThisMonth ? 'var(--green-light)' : 'var(--red-light)', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: isPaidThisMonth ? 'var(--green)' : 'var(--red)' }}>
+                            {isPaidThisMonth ? '✓ Mese corrente pagato' : '✗ Mese corrente non pagato'}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                            {fmtMonth(currentMonth)} · €{currentEntry?.fee ?? c.monthlyFee ?? 0}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                          {fmtMonth(currentMonth)} · €{c.monthlyFee || 0}
-                        </div>
+                        <button onClick={() => startPay(currentMonth)} style={{
+                          fontSize: 12, fontWeight: 700, padding: '5px 14px', borderRadius: 6, cursor: 'pointer',
+                          border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`,
+                          background: 'white', color: isPaidThisMonth ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          {isPaidThisMonth ? 'Segna non pagato' : 'Segna pagato'}
+                        </button>
                       </div>
-                      <button onClick={() => toggleMonthPayment(currentMonth)} style={{
-                        fontSize: 12, fontWeight: 700, padding: '5px 14px', borderRadius: 6, cursor: 'pointer',
-                        border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`,
-                        background: 'white', color: isPaidThisMonth ? 'var(--green)' : 'var(--red)',
-                      }}>
-                        {isPaidThisMonth ? 'Segna non pagato' : 'Segna pagato'}
-                      </button>
+                      {payingMonth?.month === currentMonth && <PayConfirm month={currentMonth} />}
                     </div>
 
                     {/* Storico mesi */}
@@ -560,26 +600,29 @@ export default function Clienti() {
                               showToast('Mese rimosso', 'warning');
                             };
                             return (
-                              <div key={month} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                                <div>
-                                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>{fmtMonth(month)}</span>
-                                  <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>€{entry?.fee || c.monthlyFee || 0}</span>
+                              <div key={month} style={{ borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px' }}>
+                                  <div>
+                                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>{fmtMonth(month)}</span>
+                                    <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>€{entry?.fee ?? c.monthlyFee ?? 0}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                    <button onClick={() => startPay(month)} style={{
+                                      fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                                      border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
+                                      background: paid ? 'var(--green-light)' : 'var(--red-light)',
+                                      color: paid ? 'var(--green)' : 'var(--red)',
+                                    }}>
+                                      {paid ? '✓ Pagato' : '✗ Non pagato'}
+                                    </button>
+                                    <button onClick={removeMonth} title="Rimuovi" style={{
+                                      fontSize: 12, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
+                                      border: '1.5px solid var(--border)', background: 'var(--surface2)',
+                                      color: 'var(--text-3)', lineHeight: 1,
+                                    }}>✕</button>
+                                  </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                  <button onClick={() => toggleMonthPayment(month)} style={{
-                                    fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
-                                    border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
-                                    background: paid ? 'var(--green-light)' : 'var(--red-light)',
-                                    color: paid ? 'var(--green)' : 'var(--red)',
-                                  }}>
-                                    {paid ? '✓ Pagato' : '✗ Non pagato'}
-                                  </button>
-                                  <button onClick={removeMonth} title="Rimuovi" style={{
-                                    fontSize: 12, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
-                                    border: '1.5px solid var(--border)', background: 'var(--surface2)',
-                                    color: 'var(--text-3)', lineHeight: 1,
-                                  }}>✕</button>
-                                </div>
+                                {payingMonth?.month === month && <div style={{ padding: '0 12px 10px' }}><PayConfirm month={month} /></div>}
                               </div>
                             );
                           })}
