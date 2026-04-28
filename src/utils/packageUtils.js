@@ -1,13 +1,13 @@
 // src/utils/packageUtils.js
-// Gestione coda pacchetti FIFO con:
-// - manualUsed: lezioni scalate manualmente (non da appuntamenti)
-// - paid: true/false per ogni pacchetto
-// - avviso se lezioni esaurite e pacchetto non pagato
+// Pacchetti INDIPENDENTI — nessun FIFO automatico.
+// Il pacchetto attivo è quello con active: true (o il primo se nessuno è marcato, per retrocompatibilità).
+// Solo il pacchetto attivo viene consumato da appuntamenti + manualUsed.
+// I pacchetti in coda restano intatti finché l'utente non li attiva manualmente.
 
 export function getPackageQueue(client, appointments) {
-  const packages = [...(client.packages || [])];
+  let packages = [...(client.packages || [])];
 
-  // Migrazione vecchio formato
+  // ── Migrazione vecchio formato (packageLessons flat) ──
   if (packages.length === 0 && client.packageLessons > 0) {
     packages.push({
       id: 'legacy',
@@ -16,6 +16,7 @@ export function getPackageQueue(client, appointments) {
       purchasedAt: client.packagePurchasedAt || '',
       paid: true,
       manualUsed: 0,
+      active: true,
     });
   }
 
@@ -23,46 +24,70 @@ export function getPackageQueue(client, appointments) {
     packages: [], totalRemaining: 0, activePackage: null,
     allExhausted: true, isExpiring: false,
     unpaidExhausted: false, totalPaid: 0, totalUnpaid: 0,
+    canBook: false,
   };
 
-  // Lezioni usate da appuntamenti reali
-  const aptUsed = appointments.filter(a => a.clientId === client.id).length;
-  // Lezioni scalate manualmente + da appuntamenti
-  const totalUsed = aptUsed + packages.reduce((s, p) => s + (p.manualUsed || 0), 0);
+  // ── Retrocompatibilità: se nessun pacchetto ha active:true, marca il primo non esaurito ──
+  // (vecchi dati salvati senza il campo active)
+  const hasActiveMarked = packages.some(p => p.active === true);
+  if (!hasActiveMarked) {
+    // Calcola quale sarebbe il "primo" in logica FIFO precedente e marcalo attivo
+    // così i dati vecchi continuano a funzionare senza migrazione forzata
+    let lessonsLeft = appointments.filter(a => a.clientId === client.id).length
+      + packages.reduce((s, p) => s + (p.manualUsed || 0), 0);
+    let activeFallbackSet = false;
+    packages = packages.map(p => {
+      if (activeFallbackSet) return p;
+      const used = Math.min(lessonsLeft, p.lessons);
+      lessonsLeft = Math.max(0, lessonsLeft - p.lessons);
+      const remaining = p.lessons - used;
+      if (remaining > 0) {
+        activeFallbackSet = true;
+        return { ...p, active: true };
+      }
+      return p; // esaurito — non attivo
+    });
+    // Se tutti esauriti, considera il primo come attivo (sarà esaurito, mostrato correttamente)
+    if (!activeFallbackSet && packages.length > 0) {
+      packages = packages.map((p, i) => i === 0 ? { ...p, active: true } : p);
+    }
+  }
 
-  // Calcola stato FIFO
-  let lessonsLeft = totalUsed;
+  // ── Lezioni usate da appuntamenti reali — imputate SOLO al pacchetto attivo ──
+  const aptUsed = appointments.filter(a => a.clientId === client.id).length;
+
   const packagesWithStatus = packages.map((pkg) => {
-    const used = Math.min(lessonsLeft, pkg.lessons);
-    lessonsLeft = Math.max(0, lessonsLeft - pkg.lessons);
-    const remaining = pkg.lessons - used;
+    const isActive = pkg.active === true;
+    const usedFromApt = isActive ? aptUsed : 0;
+    const usedManual = pkg.manualUsed || 0;
+    const totalUsed = usedFromApt + usedManual;
+    const used = Math.min(totalUsed, pkg.lessons);
+    const remaining = Math.max(0, pkg.lessons - used);
     const exhausted = remaining === 0;
     const paid = pkg.paid !== false; // default true se non specificato
-    return { ...pkg, used, remaining, exhausted, paid };
+    return { ...pkg, used, remaining, exhausted, paid, isActive };
   });
 
-  const totalRemaining = packagesWithStatus.reduce((s, p) => s + p.remaining, 0);
-  const activePackage = packagesWithStatus.find(p => !p.exhausted) || null;
+  const activePackage = packagesWithStatus.find(p => p.isActive) || null;
+  const totalRemaining = activePackage ? activePackage.remaining : 0;
 
-  // Revenue: solo pacchetti pagati
-  const totalPaid = packagesWithStatus.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
+  // Revenue
+  const totalPaid   = packagesWithStatus.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
   const totalUnpaid = packagesWithStatus.filter(p => !p.paid).reduce((s, p) => s + (p.cost || 0), 0);
 
-  // Avviso SOLO se è l'ultima lezione (remaining === 1) e il pacchetto NON è pagato
-  const unpaidLastLesson = activePackage && !activePackage.paid && activePackage.remaining === 1;
+  const unpaidLastLesson  = activePackage && !activePackage.paid && activePackage.remaining === 1;
+  const unpaidExhausted   = packagesWithStatus.some(p => p.exhausted && !p.paid && p.isActive);
+  const unpaidAlmostDone  = unpaidLastLesson;
 
-  // Avviso se le lezioni sono finite (remaining === 0) e il pacchetto NON è pagato
-  const unpaidExhausted = packagesWithStatus.some(p => p.exhausted && !p.paid);
-
-  // Alias per compatibilità con il codice esistente
-  const unpaidAlmostDone = unpaidLastLesson;
+  // Si possono prendere appuntamenti solo se c'è un pacchetto attivo con lezioni rimaste
+  const canBook = !!activePackage && activePackage.remaining > 0;
 
   return {
     packages: packagesWithStatus,
     totalRemaining,
     totalLessons: packagesWithStatus.reduce((s, p) => s + p.lessons, 0),
     activePackage,
-    allExhausted: totalRemaining === 0,
+    allExhausted: !activePackage || activePackage.remaining === 0,
     isExpiring: totalRemaining <= 2 && totalRemaining >= 0,
     unpaidExhausted,
     unpaidAlmostDone,
@@ -70,5 +95,6 @@ export function getPackageQueue(client, appointments) {
     totalPaid,
     totalUnpaid,
     aptUsed,
+    canBook,
   };
 }
