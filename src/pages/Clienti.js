@@ -793,7 +793,7 @@ export default function Clienti() {
                         <button className="btn btn-danger btn-sm"
                           title="Elimina pacchetto"
                           onClick={() => {
-                            if (window.confirm('Eliminare questo pacchetto? L'operazione è irreversibile.')) {
+                            if (window.confirm(`Eliminare questo pacchetto? L'operazione non e' reversibile.`)) {
                               handleDeletePackage(c, pkg.id);
                             }
                           }}>✕</button>
