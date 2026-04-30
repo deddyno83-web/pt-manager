@@ -1,13 +1,14 @@
 // src/utils/packageUtils.js
-// Pacchetti INDIPENDENTI — nessun FIFO automatico.
-// Il pacchetto attivo è quello con active: true (o il primo se nessuno è marcato, per retrocompatibilità).
-// Solo il pacchetto attivo viene consumato da appuntamenti + manualUsed.
-// I pacchetti in coda restano intatti finché l'utente non li attiva manualmente.
+// Ogni pacchetto è INDIPENDENTE.
+// Quando un pacchetto viene attivato si salva `usedAtActivation` = numero di appuntamenti
+// esistenti in quel momento. Le lezioni consumate dal pacchetto attivo sono:
+//   (aptTotal - usedAtActivation) + manualUsed
+// I pacchetti in coda non vengono toccati finché non vengono attivati manualmente.
 
 export function getPackageQueue(client, appointments) {
   let packages = [...(client.packages || [])];
 
-  // ── Migrazione vecchio formato (packageLessons flat) ──
+  // ── Migrazione formato flat legacy ──
   if (packages.length === 0 && client.packageLessons > 0) {
     packages.push({
       id: 'legacy',
@@ -17,6 +18,7 @@ export function getPackageQueue(client, appointments) {
       paid: true,
       manualUsed: 0,
       active: true,
+      usedAtActivation: 0,
     });
   }
 
@@ -24,77 +26,80 @@ export function getPackageQueue(client, appointments) {
     packages: [], totalRemaining: 0, activePackage: null,
     allExhausted: true, isExpiring: false,
     unpaidExhausted: false, totalPaid: 0, totalUnpaid: 0,
-    canBook: false,
+    canBook: false, aptUsed: 0,
   };
 
-  // ── Retrocompatibilità: se nessun pacchetto ha active:true, marca il primo non esaurito ──
-  // (vecchi dati salvati senza il campo active)
+  // Totale appuntamenti del cliente
+  const aptTotal = appointments.filter(a => a.clientId === client.id).length;
+
+  // ── Retrocompatibilità: nessun pacchetto ha active:true ──
   const hasActiveMarked = packages.some(p => p.active === true);
   if (!hasActiveMarked) {
-    // Calcola quale sarebbe il "primo" in logica FIFO precedente e marcalo attivo
-    // così i dati vecchi continuano a funzionare senza migrazione forzata
-    let lessonsLeft = appointments.filter(a => a.clientId === client.id).length
-      + packages.reduce((s, p) => s + (p.manualUsed || 0), 0);
+    let consumed = aptTotal;
     let activeFallbackSet = false;
     packages = packages.map(p => {
       if (activeFallbackSet) return p;
-      const used = Math.min(lessonsLeft, p.lessons);
-      lessonsLeft = Math.max(0, lessonsLeft - p.lessons);
-      const remaining = p.lessons - used;
-      if (remaining > 0) {
-        activeFallbackSet = true;
-        return { ...p, active: true };
+      if (consumed >= p.lessons) {
+        consumed -= p.lessons;
+        return p;
       }
-      return p; // esaurito — non attivo
+      activeFallbackSet = true;
+      const usedAtActivation = Math.max(0, aptTotal - consumed);
+      return { ...p, active: true, usedAtActivation };
     });
-    // Se tutti esauriti, considera il primo come attivo (sarà esaurito, mostrato correttamente)
     if (!activeFallbackSet && packages.length > 0) {
-      packages = packages.map((p, i) => i === 0 ? { ...p, active: true } : p);
+      packages = packages.map((p, i) => i === 0
+        ? { ...p, active: true, usedAtActivation: p.usedAtActivation ?? 0 }
+        : p
+      );
     }
   }
 
-  // ── Lezioni usate da appuntamenti reali — imputate SOLO al pacchetto attivo ──
-  const aptUsed = appointments.filter(a => a.clientId === client.id).length;
-
-  const packagesWithStatus = packages.map((pkg) => {
+  // ── Calcolo stato per ogni pacchetto ──
+  const packagesWithStatus = packages.map(pkg => {
     const isActive = pkg.active === true;
-    const usedFromApt = isActive ? aptUsed : 0;
-    const usedManual = pkg.manualUsed || 0;
-    const totalUsed = usedFromApt + usedManual;
-    const used = Math.min(totalUsed, pkg.lessons);
-    const remaining = Math.max(0, pkg.lessons - used);
+    const manualUsed = pkg.manualUsed || 0;
+
+    let used, remaining;
+    if (isActive) {
+      const aptSinceActivation = Math.max(0, aptTotal - (pkg.usedAtActivation ?? 0));
+      used = Math.min(aptSinceActivation + manualUsed, pkg.lessons);
+      remaining = Math.max(0, pkg.lessons - used);
+    } else {
+      used = 0;
+      remaining = pkg.lessons;
+    }
+
     const exhausted = remaining === 0;
-    const paid = pkg.paid !== false; // default true se non specificato
+    const paid = pkg.paid !== false;
     return { ...pkg, used, remaining, exhausted, paid, isActive };
   });
 
   const activePackage = packagesWithStatus.find(p => p.isActive) || null;
   const totalRemaining = activePackage ? activePackage.remaining : 0;
 
-  // Revenue
   const totalPaid   = packagesWithStatus.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
   const totalUnpaid = packagesWithStatus.filter(p => !p.paid).reduce((s, p) => s + (p.cost || 0), 0);
 
-  const unpaidLastLesson  = activePackage && !activePackage.paid && activePackage.remaining === 1;
-  const unpaidExhausted   = packagesWithStatus.some(p => p.exhausted && !p.paid && p.isActive);
-  const unpaidAlmostDone  = unpaidLastLesson;
+  const unpaidLastLesson = activePackage && !activePackage.paid && activePackage.remaining === 1;
+  const unpaidExhausted  = !!activePackage && activePackage.exhausted && !activePackage.paid;
+  const unpaidAlmostDone = unpaidLastLesson;
 
-  // Si possono prendere appuntamenti solo se c'è un pacchetto attivo con lezioni rimaste
   const canBook = !!activePackage && activePackage.remaining > 0;
 
   return {
     packages: packagesWithStatus,
     totalRemaining,
-    totalLessons: packagesWithStatus.reduce((s, p) => s + p.lessons, 0),
+    totalLessons: activePackage ? activePackage.lessons : 0,
     activePackage,
     allExhausted: !activePackage || activePackage.remaining === 0,
-    isExpiring: totalRemaining <= 2 && totalRemaining >= 0,
+    isExpiring: totalRemaining <= 2 && totalRemaining > 0,
     unpaidExhausted,
     unpaidAlmostDone,
     unpaidLastLesson,
     totalPaid,
     totalUnpaid,
-    aptUsed,
+    aptUsed: activePackage ? activePackage.used : 0,
     canBook,
   };
 }
