@@ -36,6 +36,7 @@ export default function Dashboard() {
   const [toast, setToast] = useState(null);
   const [showQuickBook, setShowQuickBook] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(null); // 'individuali' | 'corsi' | 'nonPagato' | 'totale'
+  const [revenueMonth, setRevenueMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [qb, setQb] = useState({
     clientId: '',
     date: new Date().toISOString().split('T')[0],
@@ -67,12 +68,15 @@ export default function Dashboard() {
   );
 
   const revenue = useMemo(() => {
-    const start = startOfMonth(today);
-    const end = endOfMonth(today);
+    const [ry, rm] = revenueMonth.split('-').map(Number);
+    const start = new Date(ry, rm - 1, 1);
+    const end = new Date(ry, rm, 0, 23, 59, 59);
     let individuali = 0, corsi = 0, nonPagato = 0;
     clients.forEach(c => {
       if (c.type === 'corso') {
-        corsi += (c.monthlyFee || 0);
+        // Conta solo se c'è un pagamento per questo mese e paid===true
+        const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+        if (entry?.paid) corsi += (entry.fee ?? c.monthlyFee ?? 0);
       } else {
         const pkgs = c.packages || [];
         if (pkgs.length === 0 && c.packagePurchasedAt) {
@@ -82,15 +86,15 @@ export default function Dashboard() {
           pkgs.forEach(p => {
             const d = new Date(p.purchasedAt);
             if (d >= start && d <= end) {
-              if (p.paid !== false) individuali += (p.cost || 0);  // solo pagati
-              else nonPagato += (p.cost || 0);                      // non pagati
+              if (p.paid !== false) individuali += (p.cost || 0);
+              else nonPagato += (p.cost || 0);
             }
           });
         }
       }
     });
     return { individuali, corsi, totale: individuali + corsi, nonPagato };
-  }, [clients, appointments]);
+  }, [clients, revenueMonth]);
 
   // Clienti con ultima lezione rimasta su pacchetto non pagato
   const unpaidAlerts = useMemo(() =>
@@ -184,7 +188,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal('totale')}>
           <div className="stat-icon green">€</div>
-          <div className="stat-label">Totale {format(today, 'MMMM', { locale: it })}</div>
+          <div className="stat-label">Totale {new Date(revenueMonth + '-02').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</div>
           <div className="stat-value" style={{ color: 'var(--green)' }}>€{revenue.totale.toLocaleString('it-IT')}</div>
           <div className="stat-sub">incassato · clicca per dettaglio</div>
         </div>
@@ -205,8 +209,16 @@ export default function Dashboard() {
       {/* Entrate */}
       <div className="grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
-            Entrate {format(today, 'MMMM yyyy', { locale: it })}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Entrate
+            </div>
+            <input
+              type="month"
+              value={revenueMonth}
+              onChange={e => setRevenueMonth(e.target.value)}
+              style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: 'pointer' }}
+            />
           </div>
           <div className="revenue-split">
             <div className="revenue-box blue-box" onClick={() => setShowDetailModal('individuali')}
@@ -378,9 +390,10 @@ export default function Dashboard() {
 
       {/* DETAIL REVENUE MODAL */}
       {showDetailModal && (() => {
-        const mese = format(today, 'MMMM yyyy', { locale: it });
-        const start = startOfMonth(today);
-        const end = endOfMonth(today);
+        const [ry, rm] = revenueMonth.split('-').map(Number);
+        const mese = new Date(ry, rm - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+        const start = new Date(ry, rm - 1, 1);
+        const end = new Date(ry, rm, 0, 23, 59, 59);
 
         // Build detail rows
         let title = '', rows = [], total = 0;
@@ -408,8 +421,11 @@ export default function Dashboard() {
         } else if (showDetailModal === 'corsi') {
           title = `Corsi di gruppo — ${mese}`;
           corsi.forEach(c => {
-            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.partecipanti || 0} partecipanti`, costo: c.monthlyFee || 0, paid: true });
-            total += c.monthlyFee || 0;
+            const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+            const fee = entry?.fee ?? c.monthlyFee ?? 0;
+            const paid = entry?.paid === true;
+            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.partecipanti || 0} partecipanti`, costo: fee, paid });
+            if (paid) total += fee;
           });
         } else if (showDetailModal === 'nonPagato') {
           title = `Da incassare — ${mese}`;
@@ -437,8 +453,11 @@ export default function Dashboard() {
           });
           // Corsi
           corsi.forEach(c => {
-            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Corso mensile', costo: c.monthlyFee || 0, paid: true });
-            total += c.monthlyFee || 0;
+            const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+            const fee = entry?.fee ?? c.monthlyFee ?? 0;
+            const paid = entry?.paid === true;
+            rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Corso mensile', costo: fee, paid });
+            if (paid) total += fee;
           });
         }
 

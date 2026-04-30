@@ -87,9 +87,14 @@ export default function Clienti() {
     setShowPkgModal(false); setPkgClient(null);
   };
 
-  // Attiva manualmente un pacchetto (disattiva tutti gli altri)
+  // Attiva manualmente un pacchetto — salva usedAtActivation = snapshot apt attuali
   const handleActivatePackage = async (client, pkgId) => {
-    const newPkgs = (client.packages || []).map(p => ({ ...p, active: p.id === pkgId }));
+    const aptCount = appointments.filter(a => a.clientId === client.id).length;
+    const newPkgs = (client.packages || []).map(p => ({
+      ...p,
+      active: p.id === pkgId,
+      ...(p.id === pkgId ? { usedAtActivation: aptCount } : {}),
+    }));
     await updateClient(client.id, { packages: newPkgs });
     showToast('Pacchetto attivato!');
   };
@@ -784,11 +789,14 @@ export default function Clienti() {
                           )}
                         </div>
 
-                        {/* Elimina solo se non usato */}
-                        {pkg.used === 0 && (pkg.manualUsed || 0) === 0 && (
-                          <button className="btn btn-danger btn-sm"
-                            onClick={() => handleDeletePackage(c, pkg.id)}>✕</button>
-                        )}
+                        {/* Elimina pacchetto */}
+                        <button className="btn btn-danger btn-sm"
+                          title="Elimina pacchetto"
+                          onClick={() => {
+                            if (window.confirm('Eliminare questo pacchetto? L'operazione è irreversibile.')) {
+                              handleDeletePackage(c, pkg.id);
+                            }
+                          }}>✕</button>
                       </div>
                     );
                   })}
