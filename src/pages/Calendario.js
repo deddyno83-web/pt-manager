@@ -15,7 +15,6 @@ function Toast({ msg, type }) {
   return <div className={`toast ${type}`}>{msg}</div>;
 }
 
-
 function ImgWithFallback({ src, size = 44 }) {
   const [err, setErr] = React.useState(false);
   if (!src || err) return <span style={{ fontSize: size * 0.5 }}>💪</span>;
@@ -30,8 +29,8 @@ export default function Calendario() {
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [showSchedaModal, setShowSchedaModal] = useState(null); // { scheda, giorno }
-  const [editApt, setEditApt] = useState(null); // appuntamento da modificare
+  const [showSchedaModal, setShowSchedaModal] = useState(null);
+  const [editApt, setEditApt] = useState(null);
   const [form, setForm] = useState({ clientId: '', date: new Date().toISOString().split('T')[0], time: '09:00', durata: '60', note: '', schedaId: '', giornoScheda: '' });
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 4000); };
@@ -61,7 +60,7 @@ export default function Calendario() {
     return `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
   };
 
-  // Genera slot orari ogni 30 minuti
+  // Slot orari ogni 15 minuti
   const timeSlots = [];
   for (let h = 6; h <= 22; h++) {
     timeSlots.push(`${String(h).padStart(2,'0')}:00`);
@@ -88,7 +87,7 @@ export default function Calendario() {
   };
 
   const openModal = () => {
-    setForm({ clientId: '', date: format(selectedDate, 'yyyy-MM-dd'), time: '09:00', note: '' });
+    setForm({ clientId: '', date: format(selectedDate, 'yyyy-MM-dd'), time: '09:00', durata: '60', note: '', schedaId: '', giornoScheda: '' });
     setShowModal(true);
   };
 
@@ -168,290 +167,213 @@ export default function Calendario() {
     const d = new Date(a.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
-  const upcomingWeek = appointments
-    .filter(a => { const d = new Date(a.date); return d >= now && d <= new Date(Date.now() + 7 * 86400000); })
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // Opzioni durata senza 30 minuti
+  const DURATA_OPTIONS = [
+    { value: '15', label: '15 min' },
+    { value: '45', label: '45 min' },
+    { value: '60', label: '1 ora' },
+    { value: '90', label: '1 ora e 30' },
+    { value: '120', label: '2 ore' },
+  ];
 
   return (
     <div>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
-      <div className="page-header">
-        <h2>Calendario</h2>
-        <p>Gestisci gli appuntamenti e le lezioni</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h2>Calendario</h2>
+          <p>{monthApts.length} lezioni questo mese</p>
+        </div>
+        <button className="btn btn-primary" onClick={openModal}>+ Nuova lezione</button>
       </div>
 
       <div className="grid-2" style={{ alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="calendar-wrapper">
-            <Calendar onChange={setSelectedDate} value={selectedDate} tileContent={tileContent} locale="it-IT" />
-          </div>
-
-          <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
-                  {format(selectedDate, "EEE d MMM", { locale: it })}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{dayAppointments.length} appuntament{dayAppointments.length !== 1 ? 'i' : 'o'}</div>
-              </div>
-              <button className="btn btn-primary btn-sm" onClick={openModal}>+ Prenota</button>
-            </div>
-            {dayAppointments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>Nessun appuntamento per questo giorno</div>
-            ) : (
-              dayAppointments.map(apt => {
-                const client = clients.find(c => c.id === apt.clientId);
-                const q = getClientQueue(apt.clientId);
-                return (
-                  <div key={apt.id}>
-                    <div className="appointment-item" style={{ cursor: apt.schedaId ? 'pointer' : 'default' }}
-                      onClick={() => {
-                        if (apt.schedaId && apt.giornoScheda) {
-                          const s = schede.find(sc => sc.id === apt.schedaId);
-                          if (s) setShowSchedaModal({ scheda: s, giorno: apt.giornoScheda });
-                        }
-                      }}>
-                      <div className="apt-time">{format(new Date(apt.date), 'HH:mm')}</div>
-                      <div style={{ flex: 1 }}>
-                        <div className="apt-name">{client ? `${client.nome} ${client.cognome}` : 'Cliente rimosso'}</div>
-                        <div className="apt-detail">
-                          {apt.oraFine && <span>fino alle {apt.oraFine}</span>}
-                          {apt.giornoScheda && (
-                            <span style={{ color: 'var(--accent)', marginLeft: apt.oraFine ? 6 : 0, fontWeight: 600 }}>
-                              {apt.oraFine ? '· ' : ''}🏋️ {apt.giornoScheda}
-                              {apt.schedaId && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>→ apri</span>}
-                            </span>
-                          )}
-                          {q && q.isExpiring && <span style={{ color: q.allExhausted ? 'var(--red)' : 'var(--amber)', marginLeft: 6 }}>· {q.totalRemaining} rimaste</span>}
-                          {apt.note && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>· {apt.note}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 13 }}
-                          onClick={e => { e.stopPropagation(); openEditApt(apt); }} title="Modifica">✏️</button>
-                        <button style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '4px', borderRadius: 6, fontSize: 14 }}
-                          onClick={e => { e.stopPropagation(); setConfirmDel(apt.id); }} title="Elimina">✕</button>
-                      </div>
-                    </div>
-                    {confirmDel === apt.id && (
-                      <div className="alert alert-danger" style={{ marginBottom: 8, fontSize: 12 }}>
-                        Eliminare questo appuntamento?
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(apt.id)}>Elimina</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(null)}>Annulla</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+        {/* Calendario */}
+        <div className="card">
+          <Calendar
+            onChange={setSelectedDate}
+            value={selectedDate}
+            locale="it-IT"
+            tileContent={tileContent}
+          />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="card">
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Questo mese</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 14 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Lezioni</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.5px' }}>{monthApts.length}</div>
-              </div>
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: 14 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Clienti visti</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--green)', letterSpacing: '-0.5px' }}>{new Set(monthApts.map(a => a.clientId)).size}</div>
-              </div>
-            </div>
+        {/* Lista appuntamenti del giorno */}
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700 }}>
+              {format(selectedDate, "EEEE d MMMM", { locale: it })}
+            </h3>
+            <button className="btn btn-primary btn-sm" onClick={openModal}>+ Aggiungi</button>
           </div>
 
-          <div className="card">
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 14 }}>Prossimi 7 giorni</div>
-            {upcomingWeek.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', padding: '16px 0' }}>Nessun appuntamento</div>
-            ) : (
-              upcomingWeek.map(apt => {
-                const client = clients.find(c => c.id === apt.clientId);
-                const q = getClientQueue(apt.clientId);
-                return (
-                  <div key={apt.id} className="appointment-item">
-                    <div style={{ minWidth: 48 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: '-0.3px' }}>{format(new Date(apt.date), 'HH:mm')}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{format(new Date(apt.date), 'EEE d', { locale: it })}</div>
-                    </div>
+          {dayAppointments.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-3)' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
+              <div style={{ fontSize: 13 }}>Nessuna lezione questo giorno</div>
+              <button className="btn btn-ghost btn-sm" style={{ marginTop: 12 }} onClick={openModal}>+ Aggiungi lezione</button>
+            </div>
+          ) : (
+            dayAppointments.map(apt => {
+              const client = clients.find(c => c.id === apt.clientId);
+              const q = getClientQueue(apt.clientId);
+              const scheda = apt.schedaId ? schede.find(s => s.id === apt.schedaId) : null;
+              return (
+                <div key={apt.id} style={{ padding: '12px 14px', background: 'var(--bg)', borderRadius: 10, border: '1px solid var(--border)', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: 1 }}>
-                      <div className="apt-name" style={{ fontSize: 13 }}>{client ? `${client.nome} ${client.cognome}` : '—'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>
+                          {format(new Date(apt.date), 'HH:mm')}
+                          {apt.oraFine && ` → ${apt.oraFine}`}
+                        </span>
+                        {apt.durata && <span style={{ fontSize: 11, color: 'var(--text-3)', background: 'var(--surface2)', borderRadius: 4, padding: '1px 6px' }}>{apt.durata} min</span>}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>
+                        {client ? `${client.nome} ${client.cognome}` : '—'}
+                        {client?.type === 'corso' && <span style={{ fontSize: 11, marginLeft: 6, color: 'var(--green)', fontWeight: 600 }}>Corso</span>}
+                      </div>
+                      {apt.note && <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>📝 {apt.note}</div>}
+                      {scheda && apt.giornoScheda && (
+                        <button
+                          onClick={() => setShowSchedaModal({ scheda, giorno: apt.giornoScheda })}
+                          style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 5, padding: '2px 8px', cursor: 'pointer', fontWeight: 600 }}>
+                          🏋 {scheda.nome} — {apt.giornoScheda}
+                        </button>
+                      )}
+                      {q && q.isExpiring && (
+                        <div style={{ marginTop: 6 }}>
+                          <span className={`badge ${q.allExhausted ? 'badge-red' : 'badge-yellow'}`}>
+                            {q.allExhausted ? 'Pacchetto esaurito' : `${q.totalRemaining} lezioni rimaste`}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {q && q.isExpiring && (
-                      <span className={`badge ${q.allExhausted ? 'badge-red' : 'badge-yellow'}`}>
-                        {q.allExhausted ? 'Esaurito' : `${q.totalRemaining}`}
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEditApt(apt)} title="Modifica">✏️</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => setConfirmDel(apt.id)} title="Elimina">✕</button>
+                    </div>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  {confirmDel === apt.id && (
+                    <div className="alert alert-danger" style={{ marginTop: 10 }}>
+                      Eliminare questo appuntamento?
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(apt.id)}>Sì, elimina</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDel(null)}>Annulla</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
-      {/* SCHEDA GIORNO MODAL */}
+      {/* SCHEDA MODAL */}
       {showSchedaModal && (() => {
         const { scheda, giorno } = showSchedaModal;
-        const lista = scheda.giorni?.[giorno] || [];
-        const tuttiFatti = lista.length > 0 && lista.every(e => e.fatto);
-        const fattCount = lista.filter(e => e.fatto).length;
+        const esercizi = scheda.giorni?.[giorno] || [];
+        const fatti = esercizi.filter(e => e.fatto).length;
         return (
           <div className="modal-overlay" onClick={() => setShowSchedaModal(null)}>
-            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
               <div className="modal-header">
-                <div>
-                  <h3>🏋️ {giorno}</h3>
-                  <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2 }}>{scheda.nome} · {fattCount}/{lista.length} completati</div>
-                </div>
+                <h3>🏋 {scheda.nome} — {giorno}</h3>
                 <button className="modal-close" onClick={() => setShowSchedaModal(null)}>✕</button>
               </div>
-
-              {/* Barra progresso */}
-              <div className="progress-bar" style={{ marginBottom: 16 }}>
-                <div className="progress-fill green" style={{ width: lista.length > 0 ? `${(fattCount/lista.length)*100}%` : '0%' }} />
-              </div>
-
-              {lista.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-3)', fontSize: 13 }}>
-                  Nessun esercizio per questo giorno
+              <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{fatti}/{esercizi.length} completati</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => markTuttoFatto(scheda, giorno, true)}>✓ Tutti fatto</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => markTuttoFatto(scheda, giorno, false)}>↩ Reset</button>
                 </div>
-              ) : (
-                <>
-                  {lista.map((item, idx) => {
-                    const eInfo = ESERCIZI_DEFAULT.find(e => e.id === item.esercizioId);
-                    return (
-                      <div key={item.id || idx} style={{
-                        display: 'flex', alignItems: 'center', gap: 12,
-                        padding: '12px 14px', borderRadius: 8, marginBottom: 8,
-                        background: item.fatto ? 'var(--green-light)' : 'var(--bg)',
-                        border: `1px solid ${item.fatto ? 'var(--green-border)' : 'var(--border)'}`,
-                        transition: 'all 0.15s',
-                      }}>
-                        {/* Foto */}
-                        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', background: 'var(--surface2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <ImgWithFallback src={eInfo?.foto} size={44} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: item.fatto ? 'var(--green)' : 'var(--text)', textDecoration: item.fatto ? 'line-through' : 'none', marginBottom: 3 }}>
-                            {item.nome || 'Esercizio'}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                            {[item.serie && `${item.serie} serie`, item.ripetizioni && `${item.ripetizioni} rip`, item.carico && `${item.carico} kg`, item.recupero && `rec. ${item.recupero}`].filter(Boolean).join(' · ')}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => toggleEsercizioDone(scheda, giorno, idx)}
-                          style={{
-                            background: item.fatto ? 'var(--green)' : 'var(--surface)',
-                            border: `1.5px solid ${item.fatto ? 'var(--green)' : 'var(--border2)'}`,
-                            borderRadius: 8, padding: '7px 14px', cursor: 'pointer',
-                            color: item.fatto ? '#fff' : 'var(--text-2)',
-                            fontSize: 13, fontWeight: 600, flexShrink: 0,
-                            transition: 'all 0.15s',
-                          }}>
-                          {item.fatto ? '✓ Fatto' : 'Segna fatto'}
-                        </button>
+              </div>
+              <div style={{ maxHeight: 400, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {esercizi.map((es, idx) => {
+                  const info = ESERCIZI_DEFAULT?.find(e => e.nome === es.nome);
+                  return (
+                    <div key={idx} onClick={() => toggleEsercizioDone(scheda, giorno, idx)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8,
+                        background: es.fatto ? 'var(--green-light)' : 'var(--bg)',
+                        border: `1px solid ${es.fatto ? 'var(--green-border)' : 'var(--border)'}`,
+                        cursor: 'pointer', transition: 'all 0.15s' }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--surface2)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <ImgWithFallback src={info?.img} size={44} />
                       </div>
-                    );
-                  })}
-
-                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{fattCount} / {lista.length} esercizi completati</span>
-                    <button
-                      className={`btn ${tuttiFatti ? 'btn-secondary' : 'btn-primary'}`}
-                      onClick={() => markTuttoFatto(scheda, giorno, !tuttiFatti)}>
-                      {tuttiFatti ? '↩ Riapri tutto' : '✓ Segna tutto fatto'}
-                    </button>
-                  </div>
-                </>
-              )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: es.fatto ? 'var(--green)' : 'var(--text)', textDecoration: es.fatto ? 'line-through' : 'none' }}>{es.nome}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                          {[es.serie && `${es.serie} serie`, es.ripetizioni && `${es.ripetizioni} rip`, es.carico && `${es.carico} kg`, es.recupero && `rec ${es.recupero}`].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 18 }}>{es.fatto ? '✅' : '⬜'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setShowSchedaModal(null)}>Chiudi</button>
+              </div>
             </div>
           </div>
         );
       })()}
 
-      {/* EDIT APPOINTMENT MODAL */}
+      {/* EDIT MODAL */}
       {editApt && (() => {
-        const GIORNI_MAP = { 0: 'Domenica', 1: 'Lunedì', 2: 'Martedì', 3: 'Mercoledì', 4: 'Giovedì', 5: 'Venerdì', 6: 'Sabato' };
         const client = clients.find(c => c.id === editApt.clientId);
         const schedaCliente = schede.filter(s => s.clienteId === editApt.clientId);
         const schedaSel = schede.find(s => s.id === editApt.schedaId);
         const giorniDisp = schedaSel ? Object.keys(schedaSel.giorni || {}) : [];
-        const dataSelezionata = new Date(editApt.date + 'T12:00:00');
-        const giornoSettimana = GIORNI_MAP[dataSelezionata.getDay()];
-
+        const GIORNI_MAP = { 0: 'Domenica', 1: 'Lunedì', 2: 'Martedì', 3: 'Mercoledì', 4: 'Giovedì', 5: 'Venerdì', 6: 'Sabato' };
+        const giornoSettimana = editApt.date ? GIORNI_MAP[new Date(editApt.date).getDay()] : '';
         return (
           <div className="modal-overlay" onClick={() => setEditApt(null)}>
-            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
               <div className="modal-header">
-                <div>
-                  <h3>Modifica appuntamento</h3>
-                  <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2 }}>
-                    {client ? `${client.nome} ${client.cognome}` : '—'}
-                  </div>
-                </div>
+                <h3>Modifica appuntamento</h3>
                 <button className="modal-close" onClick={() => setEditApt(null)}>✕</button>
               </div>
-
-              {/* Data e ora */}
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 14 }}>
+                {client ? `${client.nome} ${client.cognome}` : '—'}
+              </div>
               <div style={{ display: 'flex', gap: 12 }}>
-                <div className="input-group" style={{ flex: 2 }}>
+                <div className="input-group" style={{ flex: 2, marginBottom: 0 }}>
                   <label>Data</label>
                   <input type="date" value={editApt.date} onChange={e => setEditApt({ ...editApt, date: e.target.value })} />
                 </div>
-                <div className="input-group" style={{ flex: 1 }}>
-                  <label>Ora inizio</label>
+                <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label>Ora</label>
                   <select value={editApt.time} onChange={e => setEditApt({ ...editApt, time: e.target.value })}>
                     {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
-                <div className="input-group" style={{ flex: 1 }}>
+                <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
                   <label>Durata</label>
                   <select value={editApt.durata} onChange={e => setEditApt({ ...editApt, durata: e.target.value })}>
-                    <option value="15">15 min</option>
-                    <option value="30">30 min</option>
-                    <option value="45">45 min</option>
-                    <option value="60">1 ora</option>
-                    <option value="90">1h 30</option>
-                    <option value="120">2 ore</option>
+                    {DURATA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               </div>
-
-              {/* Anteprima orario */}
-              {editApt.time && (
-                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 7, padding: '8px 12px', fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 14, display: 'flex', gap: 16 }}>
-                  <span>⏱ Inizio: {editApt.time}</span>
-                  <span>→</span>
-                  <span>Fine: {calcFine(editApt.time, editApt.durata)}</span>
-                </div>
-              )}
-
-              {/* Note */}
+              <div style={{ marginBottom: 14 }} />
               <div className="input-group">
                 <label>Note</label>
                 <input value={editApt.note} onChange={e => setEditApt({ ...editApt, note: e.target.value })} placeholder="es. Gambe, upper body..." />
               </div>
 
-              {/* Scheda allenamento */}
               {schedaCliente.length > 0 && (
-                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 8, padding: 14, marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                    🏋️ Scheda allenamento
-                  </div>
-                  <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Scheda allenamento</div>
+                  <div style={{ display: 'flex', gap: 12 }}>
                     <div className="input-group" style={{ flex: 1, marginBottom: 0 }}>
                       <label>Scheda</label>
                       <select value={editApt.schedaId} onChange={e => {
                         const s = schede.find(sc => sc.id === e.target.value);
-                        const autoGiorno = s?.giorni?.[giornoSettimana] ? giornoSettimana : (s ? Object.keys(s.giorni||{})[0] || '' : '');
-                        setEditApt({ ...editApt, schedaId: e.target.value, giornoScheda: autoGiorno });
+                        const defaultGiorno = s && s.giorni && s.giorni[giornoSettimana] ? giornoSettimana : '';
+                        setEditApt({ ...editApt, schedaId: e.target.value, giornoScheda: defaultGiorno });
                       }}>
                         <option value="">Nessuna scheda</option>
                         {schedaCliente.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
@@ -469,7 +391,6 @@ export default function Calendario() {
                       </div>
                     )}
                   </div>
-                  {/* Preview esercizi */}
                   {editApt.schedaId && editApt.giornoScheda && schedaSel?.giorni?.[editApt.giornoScheda] && (
                     <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {(schedaSel.giorni[editApt.giornoScheda] || []).map((e, i) => (
@@ -479,7 +400,6 @@ export default function Calendario() {
                       ))}
                     </div>
                   )}
-                  {/* Pulsante rimuovi scheda */}
                   {editApt.schedaId && (
                     <button className="btn btn-ghost btn-sm" style={{ marginTop: 8, fontSize: 11 }}
                       onClick={() => setEditApt({ ...editApt, schedaId: '', giornoScheda: '' })}>
@@ -528,7 +448,7 @@ export default function Calendario() {
                 {selectedQueue.allExhausted
                   ? 'Pacchetto esaurito! Aggiungere un nuovo pacchetto prima di prenotare.'
                   : selectedQueue.totalRemaining === 1
-                  ? `Ultima lezione disponibile! Ricordati di rinnovare il pacchetto.`
+                  ? 'Ultima lezione disponibile! Ricordati di rinnovare il pacchetto.'
                   : selectedQueue.isExpiring
                   ? `Solo ${selectedQueue.totalRemaining} lezioni rimaste nel pacchetto.`
                   : `${selectedQueue.totalRemaining} lezioni disponibili.`}
@@ -549,10 +469,7 @@ export default function Calendario() {
               <div className="input-group" style={{ flex: 1 }}>
                 <label>Durata</label>
                 <select value={form.durata} onChange={e => setForm({ ...form, durata: e.target.value })}>
-                  <option value="30">30 min</option>
-                  <option value="60">1 ora</option>
-                  <option value="90">1 ora e 30</option>
-                  <option value="120">2 ore</option>
+                  {DURATA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
             </div>
@@ -570,7 +487,6 @@ export default function Calendario() {
               <input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="es. Gambe, upper body, cardio..." />
             </div>
 
-            {/* Selezione scheda */}
             {form.clientId && (() => {
               const GIORNI_MAP = { 0: 'Domenica', 1: 'Lunedì', 2: 'Martedì', 3: 'Mercoledì', 4: 'Giovedì', 5: 'Venerdì', 6: 'Sabato' };
               const schedaCliente = schede.filter(s => s.clienteId === form.clientId);

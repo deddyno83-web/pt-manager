@@ -4,7 +4,7 @@ import { useClients } from '../hooks/useClients';
 import { useSchede } from '../hooks/useSchede';
 import { useAppointments } from '../hooks/useAppointments';
 import { getPackageQueue } from '../utils/packageUtils';
-import { format, startOfMonth, endOfMonth, parseISO, addDays, isBefore } from 'date-fns';
+import { format, parseISO, addDays, isBefore } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 
@@ -35,8 +35,9 @@ export default function Dashboard() {
 
   const [toast, setToast] = useState(null);
   const [showQuickBook, setShowQuickBook] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(null); // 'individuali' | 'corsi' | 'nonPagato' | 'totale'
-  const [revenueMonth, setRevenueMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [showDetailModal, setShowDetailModal] = useState(null);
+  // Selettore mese unificato per tutta la dashboard
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [qb, setQb] = useState({
     clientId: '',
     date: new Date().toISOString().split('T')[0],
@@ -67,25 +68,34 @@ export default function Dashboard() {
     [clients, appointments]
   );
 
+  // Appuntamenti del mese selezionato
+  const [selYear, selMonth] = selectedMonth.split('-').map(Number);
+  const monthStart = new Date(selYear, selMonth - 1, 1);
+  const monthEnd = new Date(selYear, selMonth, 0, 23, 59, 59);
+
+  const monthAppointments = useMemo(() =>
+    appointments.filter(a => {
+      const d = new Date(a.date);
+      return d >= monthStart && d <= monthEnd;
+    }),
+    [appointments, selectedMonth]
+  );
+
   const revenue = useMemo(() => {
-    const [ry, rm] = revenueMonth.split('-').map(Number);
-    const start = new Date(ry, rm - 1, 1);
-    const end = new Date(ry, rm, 0, 23, 59, 59);
     let individuali = 0, corsi = 0, nonPagato = 0;
     clients.forEach(c => {
       if (c.type === 'corso') {
-        // Conta solo se c'è un pagamento per questo mese e paid===true
-        const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+        const entry = (c.monthlyPayments || []).find(p => p.month === selectedMonth);
         if (entry?.paid) corsi += (entry.fee ?? c.monthlyFee ?? 0);
       } else {
         const pkgs = c.packages || [];
         if (pkgs.length === 0 && c.packagePurchasedAt) {
           const d = new Date(c.packagePurchasedAt);
-          if (d >= start && d <= end) individuali += (c.packageCost || 0);
+          if (d >= monthStart && d <= monthEnd) individuali += (c.packageCost || 0);
         } else {
           pkgs.forEach(p => {
             const d = new Date(p.purchasedAt);
-            if (d >= start && d <= end) {
+            if (d >= monthStart && d <= monthEnd) {
               if (p.paid !== false) individuali += (p.cost || 0);
               else nonPagato += (p.cost || 0);
             }
@@ -94,9 +104,8 @@ export default function Dashboard() {
       }
     });
     return { individuali, corsi, totale: individuali + corsi, nonPagato };
-  }, [clients, revenueMonth]);
+  }, [clients, selectedMonth]);
 
-  // Clienti con ultima lezione rimasta su pacchetto non pagato
   const unpaidAlerts = useMemo(() =>
     clients.filter(c => {
       if (c.type === 'corso') return false;
@@ -115,7 +124,6 @@ export default function Dashboard() {
     });
   }, [schede]);
 
-  // Controlla conflitti orario
   const checkConflict = (date, time, durata, excludeId = null) => {
     const start = new Date(`${date}T${time}:00`);
     const end = new Date(start.getTime() + Number(durata) * 60000);
@@ -163,19 +171,40 @@ export default function Dashboard() {
   const individuali = clients.filter(c => c.type === 'individuale');
   const conflicts = qb.clientId && qb.date && qb.time ? checkConflict(qb.date, qb.time, qb.durata) : [];
 
+  const meseLabel = new Date(selYear, selMonth - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  const isCurrentMonth = selectedMonth === new Date().toISOString().slice(0, 7);
+
   return (
     <div>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
-      {/* Header */}
+      {/* Header con selettore mese */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2>Dashboard</h2>
           <p>{format(today, "EEEE d MMMM yyyy", { locale: it })}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowQuickBook(true)}>
-          + Prenota appuntamento
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Selettore mese prominente */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 8, padding: '6px 12px' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-3)', fontWeight: 600 }}>📅 Mese:</span>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value)}
+              style={{ fontSize: 13, fontWeight: 600, border: 'none', background: 'transparent', color: 'var(--text)', cursor: 'pointer', padding: 0 }}
+            />
+            {!isCurrentMonth && (
+              <button onClick={() => setSelectedMonth(new Date().toISOString().slice(0, 7))}
+                style={{ fontSize: 11, padding: '2px 8px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--accent-light)', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
+                Oggi
+              </button>
+            )}
+          </div>
+          <button className="btn btn-primary" onClick={() => setShowQuickBook(true)}>
+            + Prenota appuntamento
+          </button>
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -188,15 +217,15 @@ export default function Dashboard() {
         </div>
         <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal('totale')}>
           <div className="stat-icon green">€</div>
-          <div className="stat-label">Totale {new Date(revenueMonth + '-02').toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</div>
+          <div className="stat-label">Totale {meseLabel}</div>
           <div className="stat-value" style={{ color: 'var(--green)' }}>€{revenue.totale.toLocaleString('it-IT')}</div>
           <div className="stat-sub">incassato · clicca per dettaglio</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue">📅</div>
-          <div className="stat-label">Lezioni registrate</div>
-          <div className="stat-value" style={{ color: 'var(--accent)' }}>{appointments.length}</div>
-          <div className="stat-sub">totale storico</div>
+          <div className="stat-label">Lezioni {isCurrentMonth ? 'questo mese' : meseLabel.split(' ')[0]}</div>
+          <div className="stat-value" style={{ color: 'var(--accent)' }}>{monthAppointments.length}</div>
+          <div className="stat-sub">{appointments.length} totale storico</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon yellow">⚠</div>
@@ -211,14 +240,8 @@ export default function Dashboard() {
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Entrate
+              Entrate — {meseLabel}
             </div>
-            <input
-              type="month"
-              value={revenueMonth}
-              onChange={e => setRevenueMonth(e.target.value)}
-              style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: 'pointer' }}
-            />
           </div>
           <div className="revenue-split">
             <div className="revenue-box blue-box" onClick={() => setShowDetailModal('individuali')}
@@ -238,10 +261,11 @@ export default function Dashboard() {
               <div className="revenue-box-sub">{corsi.length} corsi attivi · clicca per dettaglio</div>
             </div>
             {revenue.nonPagato > 0 && (
-              <div className="revenue-box" style={{ background: 'var(--red-light)', border: '1px solid var(--red-border)', gridColumn: '1 / -1' }}>
+              <div className="revenue-box" style={{ background: 'var(--red-light)', border: '1px solid var(--red-border)', gridColumn: '1 / -1', cursor: 'pointer' }}
+                onClick={() => setShowDetailModal('nonPagato')}>
                 <div className="revenue-box-label" style={{ color: 'var(--red)' }}>⚠ Da incassare (non pagati)</div>
                 <div className="revenue-box-value" style={{ color: 'var(--red)', fontSize: 18 }}>€{revenue.nonPagato.toLocaleString('it-IT')}</div>
-                <div className="revenue-box-sub" style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal('nonPagato')}>clicca per dettaglio →</div>
+                <div className="revenue-box-sub">clicca per dettaglio →</div>
               </div>
             )}
           </div>
@@ -322,7 +346,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Appuntamenti + Scadenze */}
+      {/* Prossimi appuntamenti + Pacchetti in scadenza */}
       <div className="grid-2">
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -360,15 +384,14 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700 }}>Pacchetti in scadenza</h3>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/clienti')}>Gestisci →</button>
-          </div>
-          {expiring.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-3)', fontSize: 13 }}>Nessun pacchetto in scadenza 🎉</div>
-          ) : (
-            expiring.map(client => {
+        {/* Pacchetti in scadenza — mostrato solo se ce ne sono, altrimenti mostra stat mese */}
+        {expiring.length > 0 ? (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700 }}>Pacchetti in scadenza</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/clienti')}>Gestisci →</button>
+            </div>
+            {expiring.map(client => {
               const q = getPackageQueue(client, appointments);
               const pct = q.totalLessons > 0 ? Math.max(0, (q.totalRemaining / q.totalLessons) * 100) : 0;
               return (
@@ -383,19 +406,40 @@ export default function Dashboard() {
                   <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{q.totalLessons - q.totalRemaining}/{q.totalLessons} lezioni usate</div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        ) : (
+          <div className="card">
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16 }}>
+              Riepilogo {meseLabel}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg)', borderRadius: 8 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Lezioni effettuate</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent)' }}>{monthAppointments.length}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--bg)', borderRadius: 8 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Entrate incassate</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--green)' }}>€{revenue.totale.toLocaleString('it-IT')}</span>
+              </div>
+              {revenue.nonPagato > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--red-light)', borderRadius: 8, border: '1px solid var(--red-border)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--red)' }}>Da incassare</span>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--red)' }}>€{revenue.nonPagato.toLocaleString('it-IT')}</span>
+                </div>
+              )}
+              <div style={{ textAlign: 'center', paddingTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
+                🎉 Nessun pacchetto in scadenza
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* DETAIL REVENUE MODAL */}
       {showDetailModal && (() => {
-        const [ry, rm] = revenueMonth.split('-').map(Number);
-        const mese = new Date(ry, rm - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
-        const start = new Date(ry, rm - 1, 1);
-        const end = new Date(ry, rm, 0, 23, 59, 59);
+        const mese = new Date(selYear, selMonth - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
 
-        // Build detail rows
         let title = '', rows = [], total = 0;
 
         if (showDetailModal === 'individuali') {
@@ -404,15 +448,14 @@ export default function Dashboard() {
             const pkgs = c.packages || [];
             pkgs.forEach(p => {
               const d = new Date(p.purchasedAt);
-              if (d >= start && d <= end && p.paid !== false) {
+              if (d >= monthStart && d <= monthEnd && p.paid !== false) {
                 rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${p.lessons} lezioni`, costo: p.cost || 0, paid: true });
                 total += p.cost || 0;
               }
             });
-            // Legacy format
             if (pkgs.length === 0 && c.packagePurchasedAt) {
               const d = new Date(c.packagePurchasedAt);
-              if (d >= start && d <= end) {
+              if (d >= monthStart && d <= monthEnd) {
                 rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.packageLessons} lezioni`, costo: c.packageCost || 0, paid: true });
                 total += c.packageCost || 0;
               }
@@ -421,7 +464,7 @@ export default function Dashboard() {
         } else if (showDetailModal === 'corsi') {
           title = `Corsi di gruppo — ${mese}`;
           corsi.forEach(c => {
-            const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+            const entry = (c.monthlyPayments || []).find(p => p.month === selectedMonth);
             const fee = entry?.fee ?? c.monthlyFee ?? 0;
             const paid = entry?.paid === true;
             rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${c.partecipanti || 0} partecipanti`, costo: fee, paid });
@@ -433,7 +476,7 @@ export default function Dashboard() {
             const pkgs = c.packages || [];
             pkgs.forEach(p => {
               const d = new Date(p.purchasedAt);
-              if (d >= start && d <= end && p.paid === false) {
+              if (d >= monthStart && d <= monthEnd && p.paid === false) {
                 rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: `${p.lessons} lezioni`, costo: p.cost || 0, paid: false });
                 total += p.cost || 0;
               }
@@ -441,19 +484,17 @@ export default function Dashboard() {
           });
         } else if (showDetailModal === 'totale') {
           title = `Riepilogo totale — ${mese}`;
-          // Individuali pagati
           individuali.forEach(c => {
             (c.packages || []).forEach(p => {
               const d = new Date(p.purchasedAt);
-              if (d >= start && d <= end && p.paid !== false) {
+              if (d >= monthStart && d <= monthEnd && p.paid !== false) {
                 rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Individuale', costo: p.cost || 0, paid: true });
                 total += p.cost || 0;
               }
             });
           });
-          // Corsi
           corsi.forEach(c => {
-            const entry = (c.monthlyPayments || []).find(p => p.month === revenueMonth);
+            const entry = (c.monthlyPayments || []).find(p => p.month === selectedMonth);
             const fee = entry?.fee ?? c.monthlyFee ?? 0;
             const paid = entry?.paid === true;
             rows.push({ nome: `${c.nome} ${c.cognome}`, dettaglio: 'Corso mensile', costo: fee, paid });
@@ -518,7 +559,6 @@ export default function Dashboard() {
               <button className="modal-close" onClick={() => setShowQuickBook(false)}>✕</button>
             </div>
 
-            {/* Cliente */}
             <div className="input-group">
               <label>Cliente *</label>
               <select value={qb.clientId} onChange={e => setQb({ ...qb, clientId: e.target.value })}>
@@ -527,7 +567,6 @@ export default function Dashboard() {
               </select>
             </div>
 
-            {/* Data + Ora + Durata */}
             <div className="form-row-3">
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label>Data *</label>
@@ -543,7 +582,6 @@ export default function Dashboard() {
                 <label>Durata</label>
                 <select value={qb.durata} onChange={e => setQb({ ...qb, durata: e.target.value })}>
                   <option value="15">15 min</option>
-                  <option value="30">30 min</option>
                   <option value="45">45 min</option>
                   <option value="60">1 ora</option>
                   <option value="90">1h 30</option>
@@ -553,7 +591,6 @@ export default function Dashboard() {
             </div>
             <div style={{ marginBottom: 14 }} />
 
-            {/* Preview orario */}
             {qb.time && (
               <div style={{ background: 'var(--accent-light)', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--accent)', fontWeight: 600, marginBottom: 14, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 <span>⏱ {qb.time} → {calcFine(qb.time, qb.durata)}</span>
@@ -561,7 +598,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Conflitti */}
             {conflicts.length > 0 && (
               <div className="alert alert-danger" style={{ marginBottom: 14 }}>
                 ⚠ Conflitto: {conflicts.map(a => {
@@ -571,7 +607,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Note */}
             <div className="input-group">
               <label>Note</label>
               <input value={qb.note} onChange={e => setQb({ ...qb, note: e.target.value })} placeholder="es. Gambe, cardio..." />

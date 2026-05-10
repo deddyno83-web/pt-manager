@@ -1,9 +1,9 @@
 // src/pages/Clienti.js
 import { generateClientePDF } from '../utils/generatePDF';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
-import { getPackageQueue } from '../utils/packageUtils';
+import { getPackageQueue, applyAutoActivation } from '../utils/packageUtils';
 import { useSchede } from '../hooks/useSchede';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -38,9 +38,23 @@ export default function Clienti() {
   const [toast, setToast] = useState(null);
   const [showDetail, setShowDetail] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [payingMonth, setPayingMonth] = useState(null); // { month, fee } — per input costo inline pagamenti mensili
+  const [payingMonth, setPayingMonth] = useState(null);
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
+
+  // ── Auto-attivazione pacchetto successivo ──
+  // Ogni volta che cambia clients o appointments, controlla se qualche client
+  // ha un pacchetto esaurito con un successivo in coda da attivare.
+  useEffect(() => {
+    clients.forEach(client => {
+      if (client.type !== 'individuale') return;
+      const q = getPackageQueue(client, appointments);
+      if (q.autoActivated && q.autoActivateNextId) {
+        const updatedPkgs = applyAutoActivation(client.packages || [], q.autoActivateNextId, q.aptTotal);
+        updateClient(client.id, { packages: updatedPkgs }).catch(() => {});
+      }
+    });
+  }, [clients, appointments]);
 
   const filtered = useMemo(() =>
     clients.filter(c => {
@@ -62,11 +76,19 @@ export default function Clienti() {
       await updateClient(editClient.id, { nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiornato!');
       setShowModal(false);
-      setShowDetail(editClient.id); // riapre il dettaglio aggiornato
+      setShowDetail(editClient.id);
       return;
     } else {
-      // Primo pacchetto disponibile sia per individuale che per corso
-      const firstPkg = form.packageLessons ? [{ id: Date.now().toString(), lessons: Number(form.packageLessons), cost: Number(form.packageCost) || 0, purchasedAt: form.packagePurchasedAt, paid: false }] : [];
+      // costo opzionale: se non inserito → 0 (non null)
+      const firstPkg = form.packageLessons ? [{
+        id: Date.now().toString(),
+        lessons: Number(form.packageLessons),
+        cost: form.packageCost !== '' ? Number(form.packageCost) : 0,
+        purchasedAt: form.packagePurchasedAt,
+        paid: false,
+        active: true,
+        usedAtActivation: 0,
+      }] : [];
       await addClient({ nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, type: form.type, packages: firstPkg, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiunto!');
     }
@@ -76,20 +98,44 @@ export default function Clienti() {
   const handleAddPackage = async () => {
     if (!pkgForm.packageLessons) return showToast('Inserisci il numero di lezioni', 'error');
     const existing = pkgClient.packages || [];
-    // Migrazione legacy
     const base = existing.length === 0 && pkgClient.packageLessons > 0
       ? [{ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '', paid: true, active: true }]
       : existing;
-    // Il nuovo pacchetto parte come non attivo (in coda) — l'utente lo attiverà manualmente
-    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: Number(pkgForm.packageCost) || 0, purchasedAt: pkgForm.packagePurchasedAt, paid: false, active: false };
-    await updateClient(pkgClient.id, { packages: [...base, newPkg] });
-    showToast(`Pacchetto di ${newPkg.lessons} lezioni aggiunto in coda!`);
+
+    // Se non c'è nessun pacchetto attivo con lezioni rimaste, attiva subito il nuovo
+    const q = getPackageQueue(pkgClient, appointments);
+    const shouldActivateImmediately = q.allExhausted || !q.canBook;
+
+    const aptCount = shouldActivateImmediately
+      ? appointments.filter(a => a.clientId === pkgClient.id && new Date(a.date) <= new Date()).length
+      : 0;
+
+    const newPkg = {
+      id: Date.now().toString(),
+      lessons: Number(pkgForm.packageLessons),
+      cost: pkgForm.packageCost !== '' ? Number(pkgForm.packageCost) : 0,
+      purchasedAt: pkgForm.packagePurchasedAt,
+      paid: false,
+      active: shouldActivateImmediately,
+      ...(shouldActivateImmediately ? { usedAtActivation: aptCount } : {}),
+    };
+
+    // Se si attiva subito, disattiva gli altri
+    const updatedBase = shouldActivateImmediately
+      ? base.map(p => ({ ...p, active: false }))
+      : base;
+
+    await updateClient(pkgClient.id, { packages: [...updatedBase, newPkg] });
+    showToast(shouldActivateImmediately
+      ? `Pacchetto di ${newPkg.lessons} lezioni aggiunto e attivato!`
+      : `Pacchetto di ${newPkg.lessons} lezioni aggiunto in coda!`
+    );
     setShowPkgModal(false); setPkgClient(null);
   };
 
-  // Attiva manualmente un pacchetto — salva usedAtActivation = snapshot apt attuali
+  // Attiva manualmente un pacchetto
   const handleActivatePackage = async (client, pkgId) => {
-    const aptCount = appointments.filter(a => a.clientId === client.id).length;
+    const aptCount = appointments.filter(a => a.clientId === client.id && new Date(a.date) <= new Date()).length;
     const newPkgs = (client.packages || []).map(p => ({
       ...p,
       active: p.id === pkgId,
@@ -109,253 +155,6 @@ export default function Clienti() {
     await deleteClient(id);
     showToast('Cliente eliminato', 'warning');
     setConfirmDelete(null); setShowDetail(null);
-  };
-
-  const generatePDF = (client) => {
-    const q = getPackageQueue(client, appointments);
-    const schedeCliente = schede.filter(s => s.clienteId === client.id);
-    const aptList = appointments.filter(a => a.clientId === client.id).sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // Use window.jspdf if available, otherwise dynamic import
-    const { jsPDF } = window.jspdf || {};
-    if (!jsPDF) {
-      // Load jsPDF dynamically
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      script.onload = () => generatePDF(client);
-      document.head.appendChild(script);
-      return;
-    }
-
-    const doc = new jsPDF();
-    const pageW = doc.internal.pageSize.getWidth();
-    let y = 0;
-
-    // ── HEADER ──
-    doc.setFillColor(37, 99, 235);
-    doc.rect(0, 0, pageW, 28, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    doc.text('PT MANAGER', 14, 12);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Scheda Cliente', 14, 21);
-    doc.setFontSize(9);
-    doc.text(new Date().toLocaleDateString('it-IT'), pageW - 14, 21, { align: 'right' });
-
-    y = 38;
-
-    // ── DATI CLIENTE ──
-    doc.setTextColor(15, 23, 42);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${client.nome} ${client.cognome}`, 14, y);
-    y += 7;
-
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    const tipo = client.type === 'corso' ? 'Corso di gruppo' : 'Cliente individuale';
-    doc.text(tipo, 14, y);
-    y += 8;
-
-    // Info line
-    const infos = [];
-    if (client.telefono) infos.push(`Tel: ${client.telefono}`);
-    if (client.email) infos.push(`Email: ${client.email}`);
-    if (infos.length > 0) {
-      doc.setTextColor(71, 85, 105);
-      doc.setFontSize(9);
-      doc.text(infos.join('   ·   '), 14, y);
-      y += 8;
-    }
-
-    // Divider
-    doc.setDrawColor(226, 232, 240);
-    doc.line(14, y, pageW - 14, y);
-    y += 8;
-
-    // ── PACCHETTI ──
-    if (q && q.packages.length > 0) {
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(37, 99, 235);
-      doc.text('Pacchetti Lezioni', 14, y);
-      y += 7;
-
-      // Summary box
-      doc.setFillColor(239, 246, 255);
-      doc.roundedRect(14, y, pageW - 28, 16, 2, 2, 'F');
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(15, 23, 42);
-      doc.text(`Lezioni rimaste: ${q.totalRemaining}/${q.totalLessons}`, 20, y + 7);
-      const totCosto = (q.packages || []).reduce((s, p) => s + (p.cost || 0), 0);
-      doc.text(`Valore totale pacchetti: €${totCosto.toLocaleString('it-IT')}`, 20, y + 13);
-      y += 22;
-
-      // Package list
-      if (q.packages && q.packages.length > 0) {
-        q.packages.forEach((pkg, i) => {
-          const status = pkg.exhausted ? 'Esaurito' : pkg.id === q.activePackage?.id ? 'In corso' : 'In coda';
-          const statusColor = pkg.exhausted ? [220, 38, 38] : pkg.id === q.activePackage?.id ? [37, 99, 235] : [22, 163, 74];
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(...statusColor);
-          doc.text(`${i + 1}. ${status}`, 14, y);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(71, 85, 105);
-          doc.text(`${pkg.lessons} lezioni  ·  €${pkg.cost}  ·  ${pkg.remaining}/${pkg.lessons} rimaste`, 50, y);
-          if (pkg.purchasedAt) doc.text(`Acquistato: ${pkg.purchasedAt}`, pageW - 14, y, { align: 'right' });
-          y += 6;
-        });
-      }
-      y += 6;
-      doc.setDrawColor(226, 232, 240);
-      doc.line(14, y, pageW - 14, y);
-      y += 8;
-    }
-
-    // ── SCHEDE ALLENAMENTO ──
-    if (schedeCliente.length > 0) {
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(37, 99, 235);
-      doc.text('Schede Allenamento', 14, y);
-      y += 8;
-
-      schedeCliente.forEach((scheda) => {
-        // Check page space
-        if (y > 250) { doc.addPage(); y = 20; }
-
-        const oggi = new Date();
-        const scaduta = scheda.dataFine && new Date(scheda.dataFine) < oggi;
-        const inScadenza = scheda.dataFine && !scaduta && new Date(scheda.dataFine) < new Date(oggi.getTime() + 7*86400000);
-        const statusColor = scaduta ? [220, 38, 38] : inScadenza ? [217, 119, 6] : [22, 163, 74];
-        const statusText = scaduta ? 'Scaduta' : inScadenza ? 'Scade presto' : 'Attiva';
-
-        // Scheda header
-        doc.setFillColor(248, 250, 251);
-        doc.setDrawColor(226, 232, 240);
-        doc.roundedRect(14, y - 2, pageW - 28, 12, 1, 1, 'FD');
-
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(15, 23, 42);
-        doc.text(scheda.nome, 18, y + 6);
-
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(...statusColor);
-        doc.text(statusText, pageW - 18, y + 6, { align: 'right' });
-        y += 16;
-
-        // Date
-        if (scheda.dataInizio || scheda.dataFine) {
-          doc.setFontSize(8.5);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(100, 116, 139);
-          const dateStr = [scheda.dataInizio && `Inizio: ${scheda.dataInizio}`, scheda.dataFine && `Scadenza: ${scheda.dataFine}`].filter(Boolean).join('   ·   ');
-          doc.text(dateStr, 18, y);
-          y += 6;
-        }
-
-        // Giorni e esercizi
-        const giorni = scheda.giorni || {};
-        const GIORNI_ORDER = ['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-        GIORNI_ORDER.filter(g => giorni[g]).forEach(giorno => {
-          if (y > 260) { doc.addPage(); y = 20; }
-
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(37, 99, 235);
-          doc.text(`▸ ${giorno}`, 18, y);
-
-          const lista = giorni[giorno] || [];
-          const fattCount = lista.filter(e => e.fatto).length;
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(100, 116, 139);
-          doc.text(`${lista.length} esercizi  ·  ${fattCount}/${lista.length} completati`, 60, y);
-          y += 5;
-
-          lista.forEach((es) => {
-            if (y > 265) { doc.addPage(); y = 20; }
-            doc.setFontSize(8.5);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(es.fatto ? 22 : 71, es.fatto ? 163 : 85, es.fatto ? 74 : 105);
-            const check = es.fatto ? '✓ ' : '○ ';
-            const details = [es.serie && `${es.serie}×${es.ripetizioni}`, es.carico && `${es.carico}kg`, es.recupero && `rec.${es.recupero}`].filter(Boolean).join(' ');
-            doc.text(`    ${check}${es.nome || 'Esercizio'}${details ? '  —  ' + details : ''}`, 18, y);
-            y += 5;
-          });
-          y += 3;
-        });
-        y += 6;
-      });
-
-      doc.setDrawColor(226, 232, 240);
-      doc.line(14, y, pageW - 14, y);
-      y += 8;
-    }
-
-    // ── STORICO APPUNTAMENTI ──
-    if (aptList.length > 0) {
-      if (y > 220) { doc.addPage(); y = 20; }
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(37, 99, 235);
-      doc.text('Storico Appuntamenti', 14, y);
-      y += 8;
-
-      const recenti = aptList.slice(0, 15);
-      recenti.forEach((apt) => {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(71, 85, 105);
-        const d = new Date(apt.date);
-        const dateStr = d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-        const timeStr = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-        let line = `${dateStr}  ${timeStr}`;
-        if (apt.oraFine) line += ` → ${apt.oraFine}`;
-        if (apt.giornoScheda) line += `  ·  🏋 ${apt.giornoScheda}`;
-        if (apt.note) line += `  ·  ${apt.note}`;
-        doc.text(line, 18, y);
-        y += 5.5;
-      });
-      if (aptList.length > 15) {
-        doc.setFontSize(8);
-        doc.setTextColor(148, 163, 184);
-        doc.text(`... e altri ${aptList.length - 15} appuntamenti`, 18, y);
-      }
-    }
-
-    // ── FOOTER ──
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      doc.setFillColor(248, 250, 251);
-      doc.rect(0, 285, pageW, 12, 'F');
-      doc.setFontSize(8);
-      doc.setTextColor(148, 163, 184);
-      doc.text('PT Manager — Generato il ' + new Date().toLocaleDateString('it-IT'), 14, 292);
-      doc.text(`Pagina ${i} di ${pageCount}`, pageW - 14, 292, { align: 'right' });
-    }
-
-    // Apri in nuova scheda per poter condividere/stampare/scaricare
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.download = `${client.nome}_${client.cognome}_PT_Manager.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    // Mantieni l'URL disponibile per condivisione
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    showToast('📄 PDF aperto — puoi scaricarlo, stamparlo o condividerlo!');
   };
 
   const handleGeneratePDF = async (client) => {
@@ -464,7 +263,6 @@ export default function Clienti() {
         const c = clients.find(x => x.id === showDetail);
         if (!c) return null;
 
-        // Auto-migra pacchetti vecchi senza id (silenzioso, non blocca UI)
         if (c.packages && c.packages.some(p => !p.id)) {
           const fixed = c.packages.map((p, i) => p.id ? p : { ...p, id: `pkg_${c.id}_${i}_${Date.now()}` });
           updateClient(c.id, { packages: fixed }).catch(() => {});
@@ -492,18 +290,13 @@ export default function Clienti() {
               {/* ── PAGAMENTI MENSILI (solo corsi di gruppo) ── */}
               {c.type === 'corso' && (() => {
                 const payments = c.monthlyPayments || [];
-                const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+                const currentMonth = new Date().toISOString().slice(0, 7);
                 const currentEntry = payments.find(p => p.month === currentMonth);
                 const isPaidThisMonth = currentEntry?.paid === true;
 
                 const startPay = (month) => {
                   const entry = payments.find(p => p.month === month);
-                  // Se già pagato → desegna direttamente senza chiedere costo
-                  if (entry?.paid) {
-                    confirmPay(month, entry.fee ?? c.monthlyFee ?? 0, false);
-                    return;
-                  }
-                  // Altrimenti apri inline con costo di default
+                  if (entry?.paid) { confirmPay(month, entry.fee ?? c.monthlyFee ?? 0, false); return; }
                   setPayingMonth({ month, fee: String(entry?.fee ?? c.monthlyFee ?? '') });
                 };
 
@@ -531,13 +324,11 @@ export default function Clienti() {
                 };
 
                 const allMonths = [...new Set([currentMonth, ...payments.map(p => p.month)])].sort((a, b) => b.localeCompare(a));
-
                 const fmtMonth = (ym) => {
                   const [y, m] = ym.split('-');
                   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
                 };
 
-                // Componente inline per confermare pagamento con costo
                 const PayConfirm = ({ month }) => (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--green-light)', border: '1.5px solid var(--green-border)' }}>
                     <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600, whiteSpace: 'nowrap' }}>€ importo:</span>
@@ -550,24 +341,14 @@ export default function Clienti() {
                       style={{ width: 80, fontSize: 13, padding: '3px 8px', borderRadius: 5, border: '1.5px solid var(--green-border)', background: 'white' }}
                       placeholder={String(c.monthlyFee || 0)}
                     />
-                    <button onClick={() => confirmPay(month, payingMonth.fee)} style={{
-                      fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 5, cursor: 'pointer',
-                      border: '1.5px solid var(--green-border)', background: 'var(--green)', color: 'white',
-                    }}>✓ Conferma</button>
-                    <button onClick={() => setPayingMonth(null)} style={{
-                      fontSize: 11, padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
-                      border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text-3)',
-                    }}>✕</button>
+                    <button onClick={() => confirmPay(month, payingMonth.fee)} style={{ fontSize: 11, fontWeight: 700, padding: '3px 12px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--green-border)', background: 'var(--green)', color: 'white' }}>✓ Conferma</button>
+                    <button onClick={() => setPayingMonth(null)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text-3)' }}>✕</button>
                   </div>
                 );
 
                 return (
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                      Pagamenti mensili
-                    </div>
-
-                    {/* Stato mese corrente */}
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pagamenti mensili</div>
                     <div style={{ padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`, background: isPaidThisMonth ? 'var(--green-light)' : 'var(--red-light)', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
@@ -578,18 +359,13 @@ export default function Clienti() {
                             {fmtMonth(currentMonth)} · €{currentEntry?.fee ?? c.monthlyFee ?? 0}
                           </div>
                         </div>
-                        <button onClick={() => startPay(currentMonth)} style={{
-                          fontSize: 12, fontWeight: 700, padding: '5px 14px', borderRadius: 6, cursor: 'pointer',
-                          border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`,
-                          background: 'white', color: isPaidThisMonth ? 'var(--green)' : 'var(--red)',
-                        }}>
+                        <button onClick={() => startPay(currentMonth)} style={{ fontSize: 12, fontWeight: 700, padding: '5px 14px', borderRadius: 6, cursor: 'pointer', border: `1.5px solid ${isPaidThisMonth ? 'var(--green-border)' : 'var(--red-border)'}`, background: 'white', color: isPaidThisMonth ? 'var(--green)' : 'var(--red)' }}>
                           {isPaidThisMonth ? 'Segna non pagato' : 'Segna pagato'}
                         </button>
                       </div>
                       {payingMonth?.month === currentMonth && <PayConfirm month={currentMonth} />}
                     </div>
 
-                    {/* Storico mesi */}
                     {allMonths.filter(m => m !== currentMonth).length > 0 && (
                       <div>
                         <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, marginBottom: 6 }}>Storico</div>
@@ -610,19 +386,10 @@ export default function Clienti() {
                                     <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>€{entry?.fee ?? c.monthlyFee ?? 0}</span>
                                   </div>
                                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                    <button onClick={() => startPay(month)} style={{
-                                      fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
-                                      border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`,
-                                      background: paid ? 'var(--green-light)' : 'var(--red-light)',
-                                      color: paid ? 'var(--green)' : 'var(--red)',
-                                    }}>
+                                    <button onClick={() => startPay(month)} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${paid ? 'var(--green-border)' : 'var(--red-border)'}`, background: paid ? 'var(--green-light)' : 'var(--red-light)', color: paid ? 'var(--green)' : 'var(--red)' }}>
                                       {paid ? '✓ Pagato' : '✗ Non pagato'}
                                     </button>
-                                    <button onClick={removeMonth} title="Rimuovi" style={{
-                                      fontSize: 12, padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
-                                      border: '1.5px solid var(--border)', background: 'var(--surface2)',
-                                      color: 'var(--text-3)', lineHeight: 1,
-                                    }}>✕</button>
+                                    <button onClick={removeMonth} title="Rimuovi" style={{ fontSize: 12, padding: '3px 7px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text-3)', lineHeight: 1 }}>✕</button>
                                   </div>
                                 </div>
                                 {payingMonth?.month === month && <div style={{ padding: '0 12px 10px' }}><PayConfirm month={month} /></div>}
@@ -632,28 +399,23 @@ export default function Clienti() {
                         </div>
                       </div>
                     )}
-
-                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={addPastMonth}>
-                      + Aggiungi mese precedente
-                    </button>
+                    <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={addPastMonth}>+ Aggiungi mese precedente</button>
                   </div>
                 );
               })()}
 
-
+              {/* ── PACCHETTI ── */}
               {q && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pacchetti ({q.packages.length})</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: q.allExhausted ? 'var(--red)' : 'var(--accent)' }}>{q.totalRemaining} lezioni rimaste</div>
                   </div>
-                  {/* Avviso: nessun pacchetto attivo con lezioni */}
                   {!q.canBook && q.packages.length > 0 && (
                     <div className="alert alert-danger" style={{ marginBottom: 12 }}>
                       <strong>⛔ Nessun pacchetto attivo.</strong> Attiva il prossimo pacchetto per permettere nuovi appuntamenti.
                     </div>
                   )}
-                  {/* Avviso pacchetto attivo non pagato e esaurito */}
                   {q.unpaidExhausted && (
                     <div className="alert alert-danger" style={{ marginBottom: 12 }}>
                       <strong>⚠ Pacchetto non pagato!</strong> Le lezioni sono finite e il pacchetto non risulta ancora saldato.
@@ -671,7 +433,6 @@ export default function Clienti() {
                     const isUnpaidDanger = pkg.exhausted && !isPaid && isActive;
 
                     const togglePaid = async () => {
-                      // Match per indice se id manca (pacchetti vecchi)
                       const newPkgs = (c.packages || []).map((p, idx) =>
                         (p.id && p.id === pkg.id) || (!p.id && idx === i)
                           ? { ...p, paid: !isPaid } : p
@@ -704,7 +465,6 @@ export default function Clienti() {
                         style={isUnpaidDanger ? { borderColor: 'var(--red-border)', background: 'var(--red-light)' } : {}}>
                         <div className={`pkg-num ${status}`}>{i + 1}</div>
                         <div style={{ flex: 1 }}>
-                          {/* Riga info */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                               {status === 'exhausted' ? '✓ Esaurito' : status === 'active' ? '▶ Attivo' : '⏳ In coda'}
@@ -715,73 +475,39 @@ export default function Clienti() {
                             </span>
                           </div>
 
-                          {/* Barra progresso solo se attivo */}
                           {isActive && <ProgressBar remaining={pkg.remaining} total={pkg.lessons} />}
 
-                          {/* Riga pulsanti */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                             {pkg.purchasedAt && (
-                              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                                {pkg.purchasedAt}
-                              </span>
+                              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{pkg.purchasedAt}</span>
                             )}
-
-                            {/* Toggle pagato */}
-                            <button onClick={togglePaid} style={{
-                              fontSize: 11, fontWeight: 700, padding: '3px 10px',
-                              borderRadius: 5, cursor: 'pointer',
-                              border: `1.5px solid ${isPaid ? 'var(--green-border)' : 'var(--red-border)'}`,
-                              background: isPaid ? 'var(--green-light)' : 'var(--red-light)',
-                              color: isPaid ? 'var(--green)' : 'var(--red)',
-                            }}>
+                            <button onClick={togglePaid} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: `1.5px solid ${isPaid ? 'var(--green-border)' : 'var(--red-border)'}`, background: isPaid ? 'var(--green-light)' : 'var(--red-light)', color: isPaid ? 'var(--green)' : 'var(--red)' }}>
                               {isPaid ? '✓ Pagato' : '✗ Non pagato'}
                             </button>
-
-                            {/* Scala / Aggiungi lezione — solo se pacchetto attivo */}
                             {isActive && (
                               <>
-                                <button onClick={scalaLezione} style={{
-                                  fontSize: 11, fontWeight: 700, padding: '3px 10px',
-                                  borderRadius: 5, cursor: 'pointer',
-                                  border: '1.5px solid var(--border)',
-                                  background: 'var(--surface2)', color: 'var(--text-2)',
-                                }}>
+                                <button onClick={scalaLezione} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text-2)' }}>
                                   − Scala lezione
                                 </button>
                                 {(pkg.manualUsed || 0) > 0 && (
-                                  <button onClick={aggiungiLezione} style={{
-                                    fontSize: 11, fontWeight: 700, padding: '3px 10px',
-                                    borderRadius: 5, cursor: 'pointer',
-                                    border: '1.5px solid var(--green-border)',
-                                    background: 'var(--green-light)', color: 'var(--green)',
-                                  }}>
+                                  <button onClick={aggiungiLezione} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--green-border)', background: 'var(--green-light)', color: 'var(--green)' }}>
                                     + Aggiungi lezione
                                   </button>
                                 )}
                               </>
                             )}
-
-                            {/* Attiva — solo se in coda */}
                             {status === 'queued' && (
-                              <button onClick={() => handleActivatePackage(c, pkg.id)} style={{
-                                fontSize: 11, fontWeight: 700, padding: '3px 10px',
-                                borderRadius: 5, cursor: 'pointer',
-                                border: '1.5px solid var(--accent)',
-                                background: 'var(--accent-light, #eff6ff)', color: 'var(--accent)',
-                              }}>
+                              <button onClick={() => handleActivatePackage(c, pkg.id)} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-light, #eff6ff)', color: 'var(--accent)' }}>
                                 ▶ Attiva ora
                               </button>
                             )}
                           </div>
 
-                          {/* Info scale manuali — solo se attivo */}
                           {isActive && (pkg.manualUsed || 0) > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
                               {pkg.manualUsed} lezione/i scalate manualmente
                             </div>
                           )}
-
-                          {/* Avviso non pagato esaurito */}
                           {isUnpaidDanger && (
                             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginTop: 6 }}>
                               ⚠ Lezioni esaurite — pacchetto non pagato!
@@ -789,11 +515,10 @@ export default function Clienti() {
                           )}
                         </div>
 
-                        {/* Elimina pacchetto */}
                         <button className="btn btn-danger btn-sm"
                           title="Elimina pacchetto"
                           onClick={() => {
-                            if (window.confirm(`Eliminare questo pacchetto? L'operazione non e' reversibile.`)) {
+                            if (window.confirm(`Eliminare questo pacchetto? L'operazione non è reversibile.`)) {
                               handleDeletePackage(c, pkg.id);
                             }
                           }}>✕</button>
@@ -922,11 +647,11 @@ export default function Clienti() {
             {!editClient && (
               <>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                  Primo pacchetto {form.type === 'corso' && '(opzionale)'}
+                  Primo pacchetto {form.type === 'corso' ? '(opzionale)' : '(opzionale)'}
                 </div>
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div className="input-group" style={{ flex: 1 }}><label>Lezioni</label><input type="number" min="1" value={form.packageLessons} onChange={e => setForm({ ...form, packageLessons: e.target.value })} placeholder="10" /></div>
-                  <div className="input-group" style={{ flex: 1 }}><label>Costo (€)</label><input type="number" value={form.packageCost} onChange={e => setForm({ ...form, packageCost: e.target.value })} placeholder={form.type === 'corso' ? '400' : '300'} /></div>
+                  <div className="input-group" style={{ flex: 1 }}><label>Costo (€) <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 400 }}>opzionale</span></label><input type="number" value={form.packageCost} onChange={e => setForm({ ...form, packageCost: e.target.value })} placeholder="0" /></div>
                   <div className="input-group" style={{ flex: 1 }}><label>Data acquisto</label><input type="date" value={form.packagePurchasedAt} onChange={e => setForm({ ...form, packagePurchasedAt: e.target.value })} /></div>
                 </div>
               </>
@@ -951,7 +676,7 @@ export default function Clienti() {
         <div className="modal-overlay" onClick={() => setShowPkgModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
             <div className="modal-header">
-              <h3>Aggiungi pacchetto in coda</h3>
+              <h3>Aggiungi pacchetto</h3>
               <button className="modal-close" onClick={() => setShowPkgModal(false)}>✕</button>
             </div>
             {(() => {
@@ -959,17 +684,20 @@ export default function Clienti() {
               return (
                 <div className={`alert ${q && q.canBook ? 'alert-success' : 'alert-warning'}`} style={{ marginBottom: 16 }}>
                   {q && q.canBook
-                    ? `${pkgClient.nome} ha ancora ${q.totalRemaining} lezioni nel pacchetto attivo. Il nuovo pacchetto rimarrà in coda finché non lo attivi manualmente.`
-                    : `Nessun pacchetto attivo per ${pkgClient.nome} ${pkgClient.cognome}. Aggiungine uno e attivalo per permettere nuovi appuntamenti.`}
+                    ? `${pkgClient.nome} ha ancora ${q.totalRemaining} lezioni nel pacchetto attivo. Il nuovo pacchetto rimarrà in coda finché non si esaurisce quello corrente.`
+                    : `Nessun pacchetto attivo per ${pkgClient.nome} ${pkgClient.cognome}. Il nuovo pacchetto verrà attivato subito.`}
                 </div>
               );
             })()}
             <div className="input-group"><label>Numero lezioni *</label><input type="number" min="1" value={pkgForm.packageLessons} onChange={e => setPkgForm({ ...pkgForm, packageLessons: e.target.value })} placeholder="10" /></div>
-            <div className="input-group"><label>Costo pacchetto (€)</label><input type="number" value={pkgForm.packageCost} onChange={e => setPkgForm({ ...pkgForm, packageCost: e.target.value })} placeholder="300" /></div>
+            <div className="input-group">
+              <label>Costo pacchetto (€) <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 400 }}>opzionale</span></label>
+              <input type="number" value={pkgForm.packageCost} onChange={e => setPkgForm({ ...pkgForm, packageCost: e.target.value })} placeholder="0" />
+            </div>
             <div className="input-group"><label>Data acquisto</label><input type="date" value={pkgForm.packagePurchasedAt} onChange={e => setPkgForm({ ...pkgForm, packagePurchasedAt: e.target.value })} /></div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowPkgModal(false)}>Annulla</button>
-              <button className="btn btn-primary" onClick={handleAddPackage}>+ Aggiungi in coda</button>
+              <button className="btn btn-primary" onClick={handleAddPackage}>+ Aggiungi pacchetto</button>
             </div>
           </div>
         </div>
