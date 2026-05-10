@@ -78,18 +78,26 @@ export function getPackageQueue(client, appointments) {
     return { ...pkg, used, remaining, exhausted, paid, isActive };
   });
 
-  // ── Auto-attivazione: se il pacchetto attivo è esaurito, attiva il prossimo ──
+  // ── Auto-attivazione: se il pacchetto attivo è esaurito, attiva il prossimo in coda ──
+  // "in coda" = active: false (indipendentemente dalla posizione nell'array)
   let autoActivated = false;
   let autoActivateNextId = null;
-  const activeIdx = packagesWithStatus.findIndex(p => p.isActive);
-  if (activeIdx !== -1 && packagesWithStatus[activeIdx].exhausted) {
-    // Cerca il primo pacchetto successivo in coda (non attivo, non esaurito nel senso che ha lezioni)
-    const nextIdx = packagesWithStatus.findIndex((p, i) => i > activeIdx && !p.isActive);
-    if (nextIdx !== -1) {
+  const activePkg = packagesWithStatus.find(p => p.isActive);
+  if (activePkg && activePkg.exhausted) {
+    const nextInQueue = packagesWithStatus.find(p => !p.isActive);
+    if (nextInQueue) {
       autoActivated = true;
-      autoActivateNextId = packagesWithStatus[nextIdx].id;
+      autoActivateNextId = nextInQueue.id;
     }
   }
+
+  // ── Ordinamento visualizzazione: attivo (non esaurito) → in coda → esaurito ──
+  const sortOrder = (p) => {
+    if (p.isActive && !p.exhausted) return 0;  // attivo con lezioni
+    if (!p.isActive) return 1;                  // in coda
+    return 2;                                   // esaurito (storico)
+  };
+  packagesWithStatus.sort((a, b) => sortOrder(a) - sortOrder(b));
 
   const activePackage = packagesWithStatus.find(p => p.isActive) || null;
   const totalRemaining = activePackage ? activePackage.remaining : 0;
