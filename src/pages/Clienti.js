@@ -1,9 +1,9 @@
 // src/pages/Clienti.js
 import { generateClientePDF } from '../utils/generatePDF';
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useClients } from '../hooks/useClients';
 import { useAppointments } from '../hooks/useAppointments';
-import { getPackageQueue, applyAutoActivation } from '../utils/packageUtils';
+import { getPackageQueue } from '../utils/packageUtils';
 import { useSchede } from '../hooks/useSchede';
 import { format } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -41,20 +41,6 @@ export default function Clienti() {
   const [payingMonth, setPayingMonth] = useState(null);
 
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
-
-  // ── Auto-attivazione pacchetto successivo ──
-  // Ogni volta che cambia clients o appointments, controlla se qualche client
-  // ha un pacchetto esaurito con un successivo in coda da attivare.
-  useEffect(() => {
-    clients.forEach(client => {
-      if (client.type !== 'individuale') return;
-      const q = getPackageQueue(client, appointments);
-      if (q.autoActivated && q.autoActivateNextId) {
-        const updatedPkgs = applyAutoActivation(client.packages || [], q.autoActivateNextId, q.aptTotal);
-        updateClient(client.id, { packages: updatedPkgs }).catch(() => {});
-      }
-    });
-  }, [clients, appointments]);
 
   const filtered = useMemo(() =>
     clients.filter(c => {
@@ -411,9 +397,17 @@ export default function Clienti() {
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pacchetti ({q.packages.length})</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: q.allExhausted ? 'var(--red)' : 'var(--accent)' }}>{q.totalRemaining} lezioni rimaste</div>
                   </div>
-                  {!q.canBook && q.packages.length > 0 && (
+                  {!q.canBook && q.hasQueue && (
+                    <div style={{ marginBottom: 12, padding: '12px 14px', borderRadius: 10, background: '#fff7ed', border: '2px solid #fed7aa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#c2410c' }}>⛔ Pacchetto esaurito</div>
+                        <div style={{ fontSize: 12, color: '#9a3412', marginTop: 2 }}>Premi <strong>▶ Attiva ora</strong> sul pacchetto in coda per continuare le prenotazioni.</div>
+                      </div>
+                    </div>
+                  )}
+                  {!q.canBook && !q.hasQueue && q.packages.length > 0 && (
                     <div className="alert alert-danger" style={{ marginBottom: 12 }}>
-                      <strong>⛔ Nessun pacchetto attivo.</strong> Attiva il prossimo pacchetto per permettere nuovi appuntamenti.
+                      <strong>⛔ Nessun pacchetto disponibile.</strong> Aggiungi un nuovo pacchetto per continuare.
                     </div>
                   )}
                   {q.unpaidExhausted && (
@@ -497,7 +491,7 @@ export default function Clienti() {
                               </>
                             )}
                             {status === 'queued' && (
-                              <button onClick={() => handleActivatePackage(c, pkg.id)} style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 5, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-light, #eff6ff)', color: 'var(--accent)' }}>
+                              <button onClick={() => handleActivatePackage(c, pkg.id)} style={{ fontSize: 13, fontWeight: 700, padding: '6px 16px', borderRadius: 7, cursor: 'pointer', border: '2px solid var(--accent)', background: 'var(--accent)', color: 'white', boxShadow: '0 2px 8px rgba(37,99,235,0.25)' }}>
                                 ▶ Attiva ora
                               </button>
                             )}
