@@ -75,10 +75,15 @@ export default function Calendario() {
     [appointments, selectedDate]
   );
 
-  const datesWithAppointments = useMemo(() =>
-    new Set(appointments.map(a => format(new Date(a.date), 'yyyy-MM-dd'))),
-    [appointments]
-  );
+  const datesWithAppointments = useMemo(() => {
+    const set = new Set();
+    appointments.forEach(a => {
+      const d = new Date(a.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      set.add(key);
+    });
+    return set;
+  }, [appointments]);
 
   const getClientQueue = (clientId) => {
     const client = clients.find(c => c.id === clientId);
@@ -153,7 +158,9 @@ export default function Calendario() {
   };
 
   const tileContent = ({ date }) => {
-    if (datesWithAppointments.has(format(date, 'yyyy-MM-dd'))) {
+    // Usa data locale per coerenza con datesWithAppointments
+    const key = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    if (datesWithAppointments.has(key)) {
       return <div className="has-appointment" />;
     }
     return null;
@@ -170,7 +177,6 @@ export default function Calendario() {
 
   // Opzioni durata senza 30 minuti
   const DURATA_OPTIONS = [
-    { value: '15', label: '15 min' },
     { value: '45', label: '45 min' },
     { value: '60', label: '1 ora' },
     { value: '90', label: '1 ora e 30' },
