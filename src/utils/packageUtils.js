@@ -3,7 +3,8 @@
 // Quando un pacchetto viene attivato si salva `usedAtActivation` = numero di appuntamenti
 // esistenti in quel momento. Le lezioni consumate dal pacchetto attivo sono:
 //   (aptTotal - usedAtActivation) + manualUsed
-// I pacchetti in coda non vengono toccati finché non vengono attivati manualmente.
+// Quando il pacchetto attivo raggiunge 0 lezioni, il successivo in coda viene
+// attivato AUTOMATICAMENTE (usedAtActivation = aptTotal corrente).
 
 export function getPackageQueue(client, appointments) {
   let packages = [...(client.packages || [])];
@@ -27,6 +28,7 @@ export function getPackageQueue(client, appointments) {
     allExhausted: true, isExpiring: false,
     unpaidExhausted: false, totalPaid: 0, totalUnpaid: 0,
     canBook: false, aptUsed: 0,
+    autoActivated: false,
   };
 
   // Appuntamenti effettuati (oggi o passati) — quelli futuri non scalano lezioni
@@ -76,6 +78,19 @@ export function getPackageQueue(client, appointments) {
     return { ...pkg, used, remaining, exhausted, paid, isActive };
   });
 
+  // ── Auto-attivazione: se il pacchetto attivo è esaurito, attiva il prossimo ──
+  let autoActivated = false;
+  let autoActivateNextId = null;
+  const activeIdx = packagesWithStatus.findIndex(p => p.isActive);
+  if (activeIdx !== -1 && packagesWithStatus[activeIdx].exhausted) {
+    // Cerca il primo pacchetto successivo in coda (non attivo, non esaurito nel senso che ha lezioni)
+    const nextIdx = packagesWithStatus.findIndex((p, i) => i > activeIdx && !p.isActive);
+    if (nextIdx !== -1) {
+      autoActivated = true;
+      autoActivateNextId = packagesWithStatus[nextIdx].id;
+    }
+  }
+
   const activePackage = packagesWithStatus.find(p => p.isActive) || null;
   const totalRemaining = activePackage ? activePackage.remaining : 0;
 
@@ -102,5 +117,25 @@ export function getPackageQueue(client, appointments) {
     totalUnpaid,
     aptUsed: activePackage ? activePackage.used : 0,
     canBook,
+    // Se true, il chiamante dovrebbe invocare updateClient per attivare autoActivateNextId
+    autoActivated,
+    autoActivateNextId,
+    aptTotal,
   };
+}
+
+/**
+ * Ritorna i packages aggiornati dopo l'auto-attivazione del prossimo in coda.
+ * Da chiamare quando getPackageQueue ritorna autoActivated === true.
+ */
+export function applyAutoActivation(clientPackages, autoActivateNextId, aptTotal) {
+  return clientPackages.map(p => {
+    if (p.id === autoActivateNextId) {
+      return { ...p, active: true, usedAtActivation: aptTotal };
+    }
+    if (p.active === true && p.id !== autoActivateNextId) {
+      return { ...p, active: false };
+    }
+    return p;
+  });
 }
