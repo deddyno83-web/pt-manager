@@ -1,10 +1,18 @@
 // src/utils/packageUtils.js
-// Regole:
-// - Un solo pacchetto alla volta ha active:true
-// - Quando si attiva un nuovo pacchetto, il vecchio viene archiviato (archived:true)
-// - I pacchetti archived sono solo storico, non mostrano "Attiva ora"
-// - Le lezioni consumate dal pacchetto attivo = (apt passati - usedAtActivation) + manualUsed
-// - I pacchetti in coda (active:false, archived:false) mostrano le lezioni totali disponibili
+//
+// LOGICA DEFINITIVA — basata sulla posizione nell'array, non su flag extra:
+//
+//   [ pkg0, pkg1, pkg2(active), pkg3, pkg4 ]
+//        ↑ storico ↑              ↑ coda ↑
+//
+// - Il pacchetto con active:true è quello corrente
+// - Tutti i pacchetti che vengono PRIMA nell'array → storico (già usati)
+// - Tutti i pacchetti che vengono DOPO nell'array  → coda (da usare)
+// - Nessun flag extra necessario (archived, ecc.)
+//
+// "Attiva ora" appare SOLO sui pacchetti in coda (dopo l'attivo).
+// Quando si attiva un pacchetto, il vecchio attivo rimane nell'array
+// ma viene prima → diventa automaticamente storico.
 
 export function getPackageQueue(client, appointments) {
   let packages = [...(client.packages || [])];
@@ -36,72 +44,78 @@ export function getPackageQueue(client, appointments) {
     a => a.clientId === client.id && new Date(a.date) <= now
   ).length;
 
-  // ── Retrocompatibilità: nessun pacchetto ha active:true ──
-  // Questa logica si attiva SOLO per dati vecchi senza il flag active
-  const hasActiveMarked = packages.some(p => p.active === true);
-  if (!hasActiveMarked) {
+  // ── Se nessuno ha active:true (dati vecchissimi senza flag) ──
+  // Usa la logica a consumo progressivo per trovare quello corrente
+  const activeIdx = packages.findIndex(p => p.active === true);
+  if (activeIdx === -1) {
     let consumed = aptTotal;
-    let found = false;
-    packages = packages.map(p => {
-      if (found) return p;
-      if (consumed >= p.lessons) { consumed -= p.lessons; return { ...p, archived: true }; }
-      found = true;
-      return { ...p, active: true, usedAtActivation: Math.max(0, aptTotal - consumed) };
-    });
-    if (!found && packages.length > 0) {
-      packages[0] = { ...packages[0], active: true, usedAtActivation: packages[0].usedAtActivation ?? 0 };
+    let foundIdx = -1;
+    for (let i = 0; i < packages.length; i++) {
+      if (consumed < packages[i].lessons) { foundIdx = i; break; }
+      consumed -= packages[i].lessons;
     }
+    if (foundIdx === -1) foundIdx = packages.length - 1;
+    const usedAtActivation = Math.max(0, aptTotal - (aptTotal - consumed > 0 ? consumed : 0));
+    packages = packages.map((p, i) =>
+      i === foundIdx ? { ...p, active: true, usedAtActivation } : { ...p, active: false }
+    );
   }
 
-  // ── Calcola stato per ogni pacchetto ──
-  const packagesWithStatus = packages.map(pkg => {
-    const isActive = pkg.active === true;
-    const isArchived = pkg.archived === true;
+  // ── Indice del pacchetto attivo (posizione pivot) ──
+  const pivotIdx = packages.findIndex(p => p.active === true);
+
+  // ── Calcola stato per ogni pacchetto in base alla posizione ──
+  const packagesWithStatus = packages.map((pkg, i) => {
+    const isActive = i === pivotIdx;
+    const isBefore = i < pivotIdx;  // storico
+    const isAfter  = i > pivotIdx;  // coda
     const manualUsed = pkg.manualUsed || 0;
 
     let used = 0;
     let remaining = pkg.lessons;
+    let role; // 'active' | 'history' | 'queue'
 
     if (isActive) {
+      role = 'active';
       const aptSince = Math.max(0, aptTotal - (pkg.usedAtActivation ?? 0));
       used = Math.min(aptSince + manualUsed, pkg.lessons);
       remaining = Math.max(0, pkg.lessons - used);
-    } else if (isArchived) {
-      // Archiviato: mostra le lezioni usate (full) per lo storico
+    } else if (isBefore) {
+      role = 'history';
+      // Per lo storico mostriamo le lezioni del pacchetto come completate
       used = pkg.lessonsUsedSnapshot ?? pkg.lessons;
       remaining = 0;
+    } else {
+      role = 'queue';
+      used = 0;
+      remaining = pkg.lessons;
     }
-    // in coda (active:false, archived:false): used=0, remaining=pkg.lessons
 
     const exhausted = isActive && remaining === 0;
     const paid = pkg.paid !== false;
-    return { ...pkg, used, remaining, exhausted, paid, isActive, isArchived };
+    return { ...pkg, used, remaining, exhausted, paid, isActive, role };
   });
 
-  // ── Ordinamento: attivo → in coda → archiviati ──
-  packagesWithStatus.sort((a, b) => {
-    const order = p => {
-      if (p.isActive && !p.exhausted) return 0; // attivo con lezioni
-      if (p.isActive && p.exhausted) return 1;  // attivo esaurito (transiente)
-      if (!p.isArchived) return 2;              // in coda
-      return 3;                                 // archivio/storico
-    };
-    return order(a) - order(b);
-  });
+  // ── Riordina per visualizzazione: attivo → coda → storico ──
+  const ordered = [
+    ...packagesWithStatus.filter(p => p.role === 'active'),
+    ...packagesWithStatus.filter(p => p.role === 'queue'),
+    ...packagesWithStatus.filter(p => p.role === 'history'),
+  ];
 
-  const activePackage = packagesWithStatus.find(p => p.isActive) || null;
+  const activePackage = ordered.find(p => p.isActive) || null;
   const totalRemaining = activePackage ? activePackage.remaining : 0;
-  const hasQueue = packagesWithStatus.some(p => !p.isActive && !p.isArchived);
+  const hasQueue = ordered.some(p => p.role === 'queue');
 
-  const totalPaid   = packagesWithStatus.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
-  const totalUnpaid = packagesWithStatus.filter(p => !p.paid).reduce((s, p) => s + (p.cost || 0), 0);
+  const totalPaid   = ordered.filter(p => p.paid).reduce((s, p) => s + (p.cost || 0), 0);
+  const totalUnpaid = ordered.filter(p => !p.paid).reduce((s, p) => s + (p.cost || 0), 0);
 
   const unpaidLastLesson = !!(activePackage && !activePackage.paid && activePackage.remaining === 1);
   const unpaidExhausted  = !!(activePackage && activePackage.exhausted && !activePackage.paid);
   const canBook = !!(activePackage && !activePackage.exhausted);
 
   return {
-    packages: packagesWithStatus,
+    packages: ordered,
     totalRemaining,
     totalLessons: activePackage ? activePackage.lessons : 0,
     activePackage,

@@ -87,22 +87,38 @@ export default function Clienti() {
     setShowPkgModal(false); setPkgClient(null);
   };
 
-  // Attiva manualmente un pacchetto — archivia il vecchio attivo
+  // Attiva manualmente un pacchetto
+  // Logica: riordina l'array in modo che il pacchetto attivato diventi il pivot.
+  // Tutti i pacchetti prima del pivot = storico, dopo = coda.
+  // Il vecchio attivo va automaticamente in "storico" perché finisce prima del nuovo pivot.
   const handleActivatePackage = async (client, pkgId) => {
-    const aptCount = appointments.filter(a => a.clientId === client.id && new Date(a.date) <= new Date()).length;
-    const newPkgs = (client.packages || []).map(p => {
-      if (p.id === pkgId) {
-        // Nuovo pacchetto attivo
-        return { ...p, active: true, archived: false, usedAtActivation: aptCount };
-      }
-      if (p.active === true) {
-        // Vecchio pacchetto attivo → archivio (salva snapshot lezioni usate per lo storico)
+    const aptCount = appointments.filter(
+      a => a.clientId === client.id && new Date(a.date) <= new Date()
+    ).length;
+
+    const pkgs = client.packages || [];
+    const targetIdx = pkgs.findIndex(p => p.id === pkgId);
+    if (targetIdx === -1) return;
+
+    // Salva snapshot lezioni usate sul vecchio attivo (per visualizzazione storico)
+    const withSnapshot = pkgs.map(p => {
+      if (p.active === true && p.id !== pkgId) {
         const aptSince = Math.max(0, aptCount - (p.usedAtActivation ?? 0));
         const usedSnapshot = Math.min(aptSince + (p.manualUsed || 0), p.lessons);
-        return { ...p, active: false, archived: true, lessonsUsedSnapshot: usedSnapshot };
+        return { ...p, active: false, lessonsUsedSnapshot: usedSnapshot };
       }
       return p;
     });
+
+    // Riordina: tutti i pacchetti prima del target restano prima (storico)
+    // Il target diventa active:true con usedAtActivation aggiornato
+    // I pacchetti dopo il target restano dopo (coda)
+    const newPkgs = withSnapshot.map((p, i) =>
+      p.id === pkgId
+        ? { ...p, active: true, usedAtActivation: aptCount }
+        : { ...p, active: false }
+    );
+
     await updateClient(client.id, { packages: newPkgs });
     showToast('Pacchetto attivato!');
   };
@@ -680,8 +696,9 @@ export default function Clienti() {
                   )}
                   {q.packages.map((pkg, i) => {
                     const isActive = pkg.isActive === true;
-                    const isArchived = pkg.isArchived === true;
-                    const status = isArchived ? 'archived' : (pkg.exhausted && isActive ? 'exhausted' : isActive ? 'active' : 'queued');
+                    const role = pkg.role || (isActive ? 'active' : 'queue'); // 'active' | 'queue' | 'history'
+                    const status = role === 'history' ? 'archived' : (pkg.exhausted && isActive ? 'exhausted' : isActive ? 'active' : 'queued');
+                    const isArchived = role === 'history';
                     const isPaid = pkg.paid !== false;
                     const isUnpaidDanger = pkg.exhausted && !isPaid && isActive;
 
