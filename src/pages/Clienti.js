@@ -66,7 +66,15 @@ export default function Clienti() {
       return;
     } else {
       // Primo pacchetto disponibile sia per individuale che per corso
-      const firstPkg = form.packageLessons ? [{ id: Date.now().toString(), lessons: Number(form.packageLessons), cost: Number(form.packageCost) || 0, purchasedAt: form.packagePurchasedAt, paid: false }] : [];
+      const firstPkg = form.packageLessons ? [{
+        id: Date.now().toString(),
+        lessons: Number(form.packageLessons),
+        cost: form.packageCost !== '' ? Number(form.packageCost) : 0,
+        purchasedAt: form.packagePurchasedAt,
+        paid: false,
+        active: true,
+        usedAtActivation: 0,
+      }] : [];
       await addClient({ nome: form.nome, cognome: form.cognome, telefono: form.telefono, email: form.email, type: form.type, packages: firstPkg, partecipanti: Number(form.partecipanti) || 0, monthlyFee: Number(form.monthlyFee) || 0, note: form.note });
       showToast('Cliente aggiunto!');
     }
@@ -81,7 +89,15 @@ export default function Clienti() {
       ? [{ id: 'legacy', lessons: pkgClient.packageLessons || 0, cost: pkgClient.packageCost || 0, purchasedAt: pkgClient.packagePurchasedAt || '', paid: true, active: true }]
       : existing;
     // Il nuovo pacchetto parte come non attivo (in coda) — l'utente lo attiverà manualmente
-    const newPkg = { id: Date.now().toString(), lessons: Number(pkgForm.packageLessons), cost: pkgForm.packageCost !== '' ? Number(pkgForm.packageCost) : 0, purchasedAt: pkgForm.packagePurchasedAt, paid: false, active: false, archived: false };
+    const newPkg = {
+      id: Date.now().toString(),
+      lessons: Number(pkgForm.packageLessons),
+      cost: pkgForm.packageCost !== '' ? Number(pkgForm.packageCost) : 0,
+      purchasedAt: pkgForm.packagePurchasedAt,
+      paid: false,
+      active: false,
+      // usedAtActivation viene impostato solo quando si preme "Attiva ora"
+    };
     await updateClient(pkgClient.id, { packages: [...base, newPkg] });
     showToast(`Pacchetto di ${newPkg.lessons} lezioni aggiunto in coda!`);
     setShowPkgModal(false); setPkgClient(null);
