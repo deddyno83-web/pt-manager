@@ -760,22 +760,25 @@ export default function Clienti() {
                     };
 
                     const scalaLezione = async () => {
-                      const newPkgs = (c.packages || []).map((p, idx) =>
-                        (p.id && p.id === pkg.id) || (!p.id && idx === i)
-                          ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
+                      const newPkgs = (c.packages || []).map(p =>
+                        p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) + 1 } : p
                       );
                       await updateClient(c.id, { packages: newPkgs });
                       showToast('Lezione scalata');
+                      // Forza aggiornamento del dettaglio con dati freschi
+                      setShowDetail(null);
+                      setTimeout(() => setShowDetail(c.id), 50);
                     };
 
                     const aggiungiLezione = async () => {
-                      if ((pkg.manualUsed || 0) === 0) return;
-                      const newPkgs = (c.packages || []).map((p, idx) =>
-                        (p.id && p.id === pkg.id) || (!p.id && idx === i)
-                          ? { ...p, manualUsed: Math.max(0, (p.manualUsed || 0) - 1) } : p
+                      // Decrementa manualUsed (può scendere sotto 0 per aggiungere lezioni extra)
+                      const newPkgs = (c.packages || []).map(p =>
+                        p.id === pkg.id ? { ...p, manualUsed: (p.manualUsed || 0) - 1 } : p
                       );
                       await updateClient(c.id, { packages: newPkgs });
                       showToast('Lezione aggiunta');
+                      setShowDetail(null);
+                      setTimeout(() => setShowDetail(c.id), 50);
                     };
 
                     return (
@@ -816,7 +819,7 @@ export default function Clienti() {
                               {isPaid ? '✓ Pagato' : '✗ Non pagato'}
                             </button>
 
-                            {/* Scala / Aggiungi lezione — solo se pacchetto attivo non archiviato */}
+                            {/* Scala / Aggiungi lezione — visibile sempre su pacchetto attivo (anche esaurito, per correggere errori) */}
                             {isActive && !isArchived && (
                               <>
                                 <button onClick={scalaLezione} style={{
@@ -827,7 +830,7 @@ export default function Clienti() {
                                 }}>
                                   − Scala lezione
                                 </button>
-                                {(pkg.manualUsed || 0) > 0 && (
+                                {true && (
                                   <button onClick={aggiungiLezione} style={{
                                     fontSize: 11, fontWeight: 700, padding: '3px 10px',
                                     borderRadius: 5, cursor: 'pointer',
