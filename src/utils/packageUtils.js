@@ -77,7 +77,10 @@ export function getPackageQueue(client, appointments) {
 
     if (isActive) {
       role = 'active';
-      const aptSince = Math.max(0, aptTotal - (pkg.usedAtActivation ?? 0));
+      // Se usedAtActivation non è definito (dato Firestore vecchio),
+      // usiamo aptTotal come base → aptSince = 0, non scala lezioni pregresse
+      const baseline = pkg.usedAtActivation !== undefined ? pkg.usedAtActivation : aptTotal;
+      const aptSince = Math.max(0, aptTotal - baseline);
       used = Math.min(aptSince + manualUsed, pkg.lessons);
       remaining = Math.max(0, pkg.lessons - used);
     } else if (isBefore) {
