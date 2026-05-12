@@ -1,18 +1,12 @@
 // src/utils/packageUtils.js
 //
-// LOGICA DEFINITIVA — basata sulla posizione nell'array, non su flag extra:
+// LOGICA POSIZIONE-BASED:
+//   [ pkg0, pkg1, pkg2(active:true), pkg3, pkg4 ]
+//        ↑ storico ↑                  ↑  coda  ↑
 //
-//   [ pkg0, pkg1, pkg2(active), pkg3, pkg4 ]
-//        ↑ storico ↑              ↑ coda ↑
-//
-// - Il pacchetto con active:true è quello corrente
-// - Tutti i pacchetti che vengono PRIMA nell'array → storico (già usati)
-// - Tutti i pacchetti che vengono DOPO nell'array  → coda (da usare)
-// - Nessun flag extra necessario (archived, ecc.)
-//
-// "Attiva ora" appare SOLO sui pacchetti in coda (dopo l'attivo).
-// Quando si attiva un pacchetto, il vecchio attivo rimane nell'array
-// ma viene prima → diventa automaticamente storico.
+// usedAtActivation = snapshot appuntamenti passati al momento dell'attivazione.
+// Lezioni consumate = (aptPassati - usedAtActivation) + manualUsed
+// Se usedAtActivation manca (dati vecchi) → default 0 (conta tutto dall'inizio)
 
 export function getPackageQueue(client, appointments) {
   let packages = [...(client.packages || [])];
@@ -36,56 +30,64 @@ export function getPackageQueue(client, appointments) {
     allExhausted: true, isExpiring: false, hasQueue: false,
     unpaidExhausted: false, unpaidLastLesson: false, unpaidAlmostDone: false,
     totalPaid: 0, totalUnpaid: 0, canBook: false, aptUsed: 0, aptTotal: 0,
+    _needsMigration: false,
   };
 
-  // Appuntamenti passati (oggi incluso)
+  // Appuntamenti passati (oggi incluso), ordinati per data
   const now = new Date();
-  const aptTotal = appointments.filter(
-    a => a.clientId === client.id && new Date(a.date) <= now
-  ).length;
+  const pastApts = appointments
+    .filter(a => a.clientId === client.id && new Date(a.date) <= now)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const aptTotal = pastApts.length;
 
-  // ── Se nessuno ha active:true (dati vecchissimi senza flag) ──
-  // Usa la logica a consumo progressivo per trovare quello corrente
-  const activeIdx = packages.findIndex(p => p.active === true);
-  if (activeIdx === -1) {
-    let consumed = aptTotal;
-    let foundIdx = -1;
-    for (let i = 0; i < packages.length; i++) {
-      if (consumed < packages[i].lessons) { foundIdx = i; break; }
-      consumed -= packages[i].lessons;
+  // ── Se nessun pacchetto ha active:true ──
+  // Questo accade con dati vecchi O se il primo pacchetto è stato salvato con active:false
+  const hasActiveMarked = packages.some(p => p.active === true);
+  if (!hasActiveMarked) {
+    // Caso semplice: un solo pacchetto → attivalo con usedAtActivation:0
+    if (packages.length === 1) {
+      packages = [{ ...packages[0], active: true, usedAtActivation: packages[0].usedAtActivation ?? 0 }];
+    } else {
+      // Più pacchetti: usa consumo progressivo per trovare quale era attivo
+      let consumed = aptTotal;
+      let foundIdx = -1;
+      for (let i = 0; i < packages.length; i++) {
+        if (consumed < packages[i].lessons) { foundIdx = i; break; }
+        consumed -= packages[i].lessons;
+      }
+      if (foundIdx === -1) foundIdx = packages.length - 1;
+      const pivotUsed = aptTotal - consumed;
+      packages = packages.map((p, i) =>
+        i === foundIdx
+          ? { ...p, active: true, usedAtActivation: p.usedAtActivation ?? pivotUsed }
+          : { ...p, active: false }
+      );
     }
-    if (foundIdx === -1) foundIdx = packages.length - 1;
-    const usedAtActivation = Math.max(0, aptTotal - (aptTotal - consumed > 0 ? consumed : 0));
-    packages = packages.map((p, i) =>
-      i === foundIdx ? { ...p, active: true, usedAtActivation } : { ...p, active: false }
-    );
   }
 
-  // ── Indice del pacchetto attivo (posizione pivot) ──
+  // ── Pivot = indice del pacchetto active:true ──
   const pivotIdx = packages.findIndex(p => p.active === true);
 
-  // ── Calcola stato per ogni pacchetto in base alla posizione ──
+  // ── Calcola stato per ogni pacchetto ──
   const packagesWithStatus = packages.map((pkg, i) => {
     const isActive = i === pivotIdx;
-    const isBefore = i < pivotIdx;  // storico
-    const isAfter  = i > pivotIdx;  // coda
+    const isBefore = i < pivotIdx;
     const manualUsed = pkg.manualUsed || 0;
 
     let used = 0;
     let remaining = pkg.lessons;
-    let role; // 'active' | 'history' | 'queue'
+    let role;
 
     if (isActive) {
       role = 'active';
-      // Se usedAtActivation non è definito (dato Firestore vecchio),
-      // usiamo aptTotal come base → aptSince = 0, non scala lezioni pregresse
-      const baseline = pkg.usedAtActivation !== undefined ? pkg.usedAtActivation : aptTotal;
+      // usedAtActivation: quanti apt passati esistevano quando il pacchetto è stato attivato
+      // Se manca (dato Firestore vecchio senza il campo) → 0 = conta tutto dall'inizio
+      const baseline = pkg.usedAtActivation ?? 0;
       const aptSince = Math.max(0, aptTotal - baseline);
       used = Math.min(aptSince + manualUsed, pkg.lessons);
       remaining = Math.max(0, pkg.lessons - used);
     } else if (isBefore) {
       role = 'history';
-      // Per lo storico mostriamo le lezioni del pacchetto come completate
       used = pkg.lessonsUsedSnapshot ?? pkg.lessons;
       remaining = 0;
     } else {
@@ -99,7 +101,7 @@ export function getPackageQueue(client, appointments) {
     return { ...pkg, used, remaining, exhausted, paid, isActive, role };
   });
 
-  // ── Riordina per visualizzazione: attivo → coda → storico ──
+  // ── Riordina: attivo → coda → storico ──
   const ordered = [
     ...packagesWithStatus.filter(p => p.role === 'active'),
     ...packagesWithStatus.filter(p => p.role === 'queue'),
@@ -117,6 +119,12 @@ export function getPackageQueue(client, appointments) {
   const unpaidExhausted  = !!(activePackage && activePackage.exhausted && !activePackage.paid);
   const canBook = !!(activePackage && !activePackage.exhausted);
 
+  // Flag per il chiamante: questo cliente ha pacchetti senza usedAtActivation
+  // → dovrebbe essere migrato su Firestore (una tantum)
+  const _needsMigration = packages.some(
+    (p, i) => i === pivotIdx && p.active && p.usedAtActivation === undefined
+  );
+
   return {
     packages: ordered,
     totalRemaining,
@@ -133,5 +141,6 @@ export function getPackageQueue(client, appointments) {
     aptUsed: activePackage ? activePackage.used : 0,
     canBook,
     aptTotal,
+    _needsMigration,
   };
 }
