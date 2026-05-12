@@ -453,7 +453,13 @@ export default function Clienti() {
             const expiring = q && q.isExpiring;
             return (
               <div key={client.id} className="client-card"
-                style={expiring ? { borderColor: q.allExhausted ? 'var(--red-border)' : 'var(--amber-border)' } : {}}
+                style={
+                  expiring
+                    ? { borderColor: q.allExhausted ? 'var(--red-border)' : 'var(--amber-border)' }
+                    : client.type === 'corso'
+                      ? { borderColor: '#6ee7b7', borderWidth: 2, borderStyle: 'solid' }
+                      : {}
+                }
                 onClick={() => setShowDetail(client.id)}>
                 {expiring && (
                   <div style={{ position: 'absolute', top: 12, right: 12 }}>
