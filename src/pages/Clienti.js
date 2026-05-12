@@ -515,6 +515,31 @@ export default function Clienti() {
           const fixed = c.packages.map((p, i) => p.id ? p : { ...p, id: `pkg_${c.id}_${i}_${Date.now()}` });
           updateClient(c.id, { packages: fixed }).catch(() => {});
         }
+        // Migrazione one-shot: fix pacchetti senza active:true o senza usedAtActivation
+        if (c.packages && c.packages.length > 0) {
+          const needsFix =
+            !c.packages.some(p => p.active === true) ||  // nessun pacchetto attivo
+            c.packages.some(p => p.active === true && p.usedAtActivation === undefined); // manca usedAtActivation
+          if (needsFix) {
+            let fixed;
+            if (!c.packages.some(p => p.active === true)) {
+              // Nessun attivo: attiva il primo (o l'unico)
+              fixed = c.packages.map((p, i) =>
+                i === 0
+                  ? { ...p, active: true, usedAtActivation: p.usedAtActivation ?? 0 }
+                  : p
+              );
+            } else {
+              // C'è un attivo ma senza usedAtActivation
+              fixed = c.packages.map(p =>
+                p.active === true && p.usedAtActivation === undefined
+                  ? { ...p, usedAtActivation: 0 }
+                  : p
+              );
+            }
+            updateClient(c.id, { packages: fixed }).catch(() => {});
+          }
+        }
         const q = getPackageQueue(c, appointments);
         const aptList = appointments.filter(a => a.clientId === c.id).sort((a, b) => new Date(b.date) - new Date(a.date));
         return (
