@@ -421,9 +421,6 @@ export default function Calendario() {
                 <div className="input-group" style={{ flex: 1 }}>
                   <label>Durata</label>
                   <select value={editApt.durata} onChange={e => setEditApt({ ...editApt, durata: e.target.value })}>
-                    <option value="15">15 min</option>
-                    <option value="30">30 min</option>
-                    <option value="45">45 min</option>
                     <option value="60">1 ora</option>
                     <option value="90">1h 30</option>
                     <option value="120">2 ore</option>
@@ -556,7 +553,6 @@ export default function Calendario() {
               <div className="input-group" style={{ flex: 1 }}>
                 <label>Durata</label>
                 <select value={form.durata} onChange={e => setForm({ ...form, durata: e.target.value })}>
-                  <option value="45">45 min</option>
                   <option value="60">1 ora</option>
                   <option value="90">1 ora e 30</option>
                   <option value="120">2 ore</option>
