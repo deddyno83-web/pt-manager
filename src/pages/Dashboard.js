@@ -581,8 +581,6 @@ export default function Dashboard() {
               <div className="input-group" style={{ marginBottom: 0 }}>
                 <label>Durata</label>
                 <select value={qb.durata} onChange={e => setQb({ ...qb, durata: e.target.value })}>
-                  <option value="15">15 min</option>
-                  <option value="45">45 min</option>
                   <option value="60">1 ora</option>
                   <option value="90">1h 30</option>
                   <option value="120">2 ore</option>
