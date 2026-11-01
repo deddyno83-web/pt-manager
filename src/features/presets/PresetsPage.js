@@ -1,6 +1,6 @@
 // src/features/presets/PresetsPage.js
 import React, { useState } from 'react';
-import { Plus, Pencil, Wand2 } from 'lucide-react';
+import { Plus, Pencil, Wand2, Trash2 } from 'lucide-react';
 import { usePresets, STARTER_PRESETS } from './usePresets';
 import PresetEditor from './PresetEditor';
 import ExerciseList from '../exercises/ExerciseList';
@@ -16,7 +16,13 @@ export default function PresetsPage() {
     setEditing(null);
   };
 
-  const createStarters = () => STARTER_PRESETS.forEach((p) => addPreset(p));
+  const remove = (p) => {
+    if (window.confirm(`Eliminare la scheda “${p.name}”? Gli allenamenti già fatti restano nello storico.`)) {
+      removePreset(p.id);
+    }
+  };
+
+  const createStarters =() => STARTER_PRESETS.forEach((p) => addPreset(p));
 
   return (
     <div className="page">
@@ -50,7 +56,12 @@ export default function PresetsPage() {
                 {p.exercises.length} esercizi · {p.exercises.reduce((n, e) => n + e.sets, 0)} serie
               </small>
             </div>
-            <button className="btn btn-ghost" onClick={() => setEditing(p)}><Pencil size={15} /> Modifica</button>
+            <button className="icon-btn edit" onClick={() => setEditing(p)} aria-label={`Modifica ${p.name}`}>
+              <Pencil size={18} />
+            </button>
+            <button className="icon-btn danger" onClick={() => remove(p)} aria-label={`Elimina ${p.name}`}>
+              <Trash2 size={18} />
+            </button>
           </header>
           <ExerciseList exercises={p.exercises} />
         </section>

@@ -134,16 +134,28 @@ function HistoryTab({ sessions, onRemove }) {
   if (sessions.length === 0) return <p className="muted pad">Nessun allenamento salvato.</p>;
   return sessions.map((s) => (
     <div className="card hist" key={s.id}>
-      <button className="hist-head" onClick={() => setOpen(open === s.id ? null : s.id)}>
-        <span className="badge" style={{ background: s.color }}>{s.letter || s.presetName?.[0]}</span>
-        <span className="grow">
-          <b>{s.presetName}</b>
-          <small className="muted">
-            {fmtDate(s.startedAt, 'EEE d MMM yyyy')} · {fmtDuration(s.durationSec)} · {sessionSets(s)} serie · {fmtVolume(s.volume)}
-          </small>
-        </span>
-        {open === s.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-      </button>
+      <div className="hist-head">
+        <button className="hist-toggle" onClick={() => setOpen(open === s.id ? null : s.id)}>
+          <span className="badge" style={{ background: s.color }}>{s.letter || s.presetName?.[0]}</span>
+          <span className="grow">
+            <b>{s.presetName}</b>
+            <small className="muted">
+              {fmtDate(s.startedAt, 'EEE d MMM yyyy')} · {fmtDuration(s.durationSec)} · {sessionSets(s)} serie · {fmtVolume(s.volume)}
+            </small>
+          </span>
+          {open === s.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+        <button
+          className="icon-btn danger"
+          aria-label="Elimina allenamento"
+          onClick={() =>
+            window.confirm(`Eliminare l’allenamento “${s.presetName}” del ${fmtDate(s.startedAt, 'd MMM yyyy')}? I grafici si aggiorneranno.`) &&
+            onRemove(s.id)
+          }
+        >
+          <Trash2 size={18} />
+        </button>
+      </div>
       {open === s.id && (
         <div className="hist-body">
           {s.exercises.map((ex) => (
@@ -152,12 +164,6 @@ function HistoryTab({ sessions, onRemove }) {
               <span className="muted">{ex.sets.map((x) => `${x.weight}×${x.reps}`).join('  ')}</span>
             </div>
           ))}
-          <button
-            className="btn btn-link danger"
-            onClick={() => window.confirm('Eliminare questo allenamento?') && onRemove(s.id)}
-          >
-            <Trash2 size={14} /> Elimina
-          </button>
         </div>
       )}
     </div>

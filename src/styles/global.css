@@ -253,8 +253,9 @@ ul, ol { list-style: none; }
 .pr b { font-size: 17px; color: var(--text); }
 .pr small { color: var(--text-2); font-size: 11px; }
 .hist { padding: 0; gap: 0; }
-.hist-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left; width: 100%; }
-.hist-head small { display: block; margin-top: 2px; }
+.hist-head { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
+.hist-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 12px 6px 12px 14px; text-align: left; }
+.hist-toggle small { display: block; margin-top: 2px; }
 .hist-body { padding: 4px 14px 12px; border-top: 1px solid var(--border); }
 .hist-ex { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
 
@@ -279,3 +280,4 @@ ul, ol { list-style: none; }
 .day-dots { display: flex; gap: 3px; min-height: 8px; margin-top: 2px; }
 .day-dots i { width: 8px; height: 8px; border-radius: 50%; }
 .free-btn { border-style: dashed; }
+.icon-btn.edit { background: var(--surface2); color: var(--text); }
