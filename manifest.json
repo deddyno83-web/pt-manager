@@ -1,7 +1,7 @@
 {
-  "short_name": "PT Manager",
-  "name": "PT Manager — Personal Trainer",
-  "description": "Gestisci clienti, schede, appuntamenti e pacchetti lezioni",
+  "short_name": "Workout Log",
+  "name": "Workout Log — Allenamenti e progressi",
+  "description": "Schede A/B/C, registro pesi, timer di recupero e grafici dei progressi",
   "icons": [
     { "src": "favicon.ico", "sizes": "64x64 32x32 24x24 16x16", "type": "image/x-icon" },
     { "src": "favicon.png", "type": "image/png", "sizes": "32x32" },
@@ -12,8 +12,8 @@
   "start_url": ".",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#2563EB",
-  "background_color": "#f8f9fb",
+  "theme_color": "#0e1015",
+  "background_color": "#0e1015",
   "categories": ["health", "fitness", "productivity"],
   "lang": "it"
 }
