@@ -35,6 +35,14 @@ npm install
 npm start
 ```
 
+## Provare l'interfaccia senza Firebase
+
+```bash
+npm run demo
+```
+
+Apre l'app su http://localhost:3100 con un utente finto e qualche allenamento d'esempio (dati solo nel browser).
+
 ## Pubblicazione
 
 A ogni push su `main` GitHub Actions compila e pubblica su GitHub Pages

@@ -10,9 +10,9 @@ import {
 } from './stats';
 import { fmtDate, fmtDuration, fmtVolume, fmtKg } from '../../core/format';
 
-const ACCENT = '#3b82f6';
-const GREEN = '#22c55e';
-const GRID = '#2a2f3a';
+const ACCENT = '#4f8cff';
+const GREEN = '#2dd36f';
+const GRID = '#252b38';
 const TICK = '#8b93a5';
 
 const RANGES = [

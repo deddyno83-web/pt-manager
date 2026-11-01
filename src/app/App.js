@@ -7,6 +7,7 @@ import { SessionsProvider } from '../features/session/SessionsContext';
 import { ActiveSessionProvider } from '../features/session/ActiveSessionContext';
 import { TimerProvider } from '../features/timer/TimerContext';
 import { MusicProvider } from '../features/music/MusicContext';
+import Toaster from '../shared/ui/Toaster';
 import Login from './Login';
 import AppLayout from './AppLayout';
 import HomePage from '../features/home/HomePage';
@@ -56,6 +57,7 @@ export default function App() {
         <HashRouter>
           <AppRoutes />
         </HashRouter>
+        <Toaster />
       </PrefsProvider>
     </AuthProvider>
   );

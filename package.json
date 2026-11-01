@@ -15,6 +15,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "demo": "node scripts/demo.js",
     "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

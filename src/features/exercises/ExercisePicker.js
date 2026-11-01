@@ -4,6 +4,7 @@ import { Search, Plus } from 'lucide-react';
 import Modal from '../../shared/ui/Modal';
 import { useExercises } from './useExercises';
 import { CATEGORIE } from './catalog';
+import { categoryColor } from './categoryColors';
 
 export default function ExercisePicker({ onPick, onClose }) {
   const { exercises, addCustom } = useExercises();
@@ -28,29 +29,41 @@ export default function ExercisePicker({ onPick, onClose }) {
 
   return (
     <Modal title="Scegli esercizio" onClose={onClose}>
-      <div className="search-box">
-        <Search size={18} />
-        <input
-          autoFocus
-          placeholder="Cerca esercizio…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="picker-top">
+        <div className="search-box">
+          <Search size={18} />
+          <input
+            autoFocus
+            placeholder="Cerca esercizio…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="chips scroll">
+          <button className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>Tutti</button>
+          {CATEGORIE.map((c) => (
+            <button
+              key={c}
+              className={`chip ${cat === c ? 'on' : ''}`}
+              style={cat === c ? { borderColor: categoryColor(c), color: categoryColor(c) } : undefined}
+              onClick={() => setCat(c)}
+            >
+              <i className="dot" style={{ background: categoryColor(c) }} />{c}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="chips">
-        <button className={`chip ${!cat ? 'on' : ''}`} onClick={() => setCat('')}>Tutti</button>
-        {CATEGORIE.map((c) => (
-          <button key={c} className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>
-        ))}
-      </div>
+      <p className="muted small">{filtered.length} esercizi</p>
 
-      <ul className="list">
-        {filtered.slice(0, 80).map((e) => (
+      <ul className="pick-list">
+        {filtered.slice(0, 100).map((e) => (
           <li key={e.id}>
-            <button className="list-row" onClick={() => onPick(e)}>
-              <span>{e.nome}</span>
-              <small>{e.categoria}{e.custom ? ' · tuo' : ''}</small>
+            <button className="pick-row" onClick={() => onPick(e)}>
+              <i className="pick-bar" style={{ background: categoryColor(e.categoria) }} />
+              <span className="pick-name">{e.nome}</span>
+              <small className="pick-cat">{e.categoria}{e.custom ? ' · tuo' : ''}</small>
+              <Plus size={18} className="pick-plus" />
             </button>
           </li>
         ))}
@@ -60,7 +73,7 @@ export default function ExercisePicker({ onPick, onClose }) {
       {search.trim() && (
         <div className="create-box">
           {!creating ? (
-            <button className="btn btn-ghost" onClick={() => setCreating(true)}>
+            <button className="btn btn-ghost block" onClick={() => setCreating(true)}>
               <Plus size={16} /> Crea “{search.trim()}”
             </button>
           ) : (

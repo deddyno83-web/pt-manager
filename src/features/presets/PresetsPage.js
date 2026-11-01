@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Plus, Pencil, Wand2 } from 'lucide-react';
 import { usePresets, STARTER_PRESETS } from './usePresets';
 import PresetEditor from './PresetEditor';
+import ExerciseList from '../exercises/ExerciseList';
 
 export default function PresetsPage() {
   const { presets, loading, addPreset, updatePreset, removePreset } = usePresets();
@@ -20,7 +21,10 @@ export default function PresetsPage() {
   return (
     <div className="page">
       <header className="page-head">
-        <h1>Schede</h1>
+        <div>
+          <small className="muted">Le tue routine</small>
+          <h1>Schede</h1>
+        </div>
         <button className="btn btn-primary" onClick={() => setEditing({})}>
           <Plus size={18} /> Nuova
         </button>
@@ -32,22 +36,24 @@ export default function PresetsPage() {
           <button className="btn btn-primary" onClick={createStarters}>
             <Wand2 size={16} /> Crea A, B, C di esempio
           </button>
-          <p className="muted">Potrai modificarle come vuoi.</p>
+          <p className="muted small">Potrai modificarle come vuoi.</p>
         </div>
       )}
 
       {presets.map((p) => (
-        <button key={p.id} className="preset-card" onClick={() => setEditing(p)}>
-          <span className="badge" style={{ background: p.color }}>{p.letter || p.name[0]}</span>
-          <span className="preset-info">
-            <b>{p.name}</b>
-            <small className="muted">
-              {p.exercises.length} esercizi · {p.exercises.reduce((n, e) => n + e.sets, 0)} serie
-            </small>
-            <small className="muted ellipsis">{p.exercises.map((e) => e.name).join(' · ')}</small>
-          </span>
-          <Pencil size={16} className="muted" />
-        </button>
+        <section key={p.id} className="preset-block" style={{ '--c': p.color }}>
+          <header className="preset-block-head">
+            <span className="badge lg" style={{ background: p.color }}>{p.letter || p.name[0]}</span>
+            <div className="grow">
+              <b>{p.name}</b>
+              <small className="muted">
+                {p.exercises.length} esercizi · {p.exercises.reduce((n, e) => n + e.sets, 0)} serie
+              </small>
+            </div>
+            <button className="btn btn-ghost" onClick={() => setEditing(p)}><Pencil size={15} /> Modifica</button>
+          </header>
+          <ExerciseList exercises={p.exercises} />
+        </section>
       ))}
 
       {editing && (
