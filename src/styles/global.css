@@ -281,3 +281,25 @@ ul, ol { list-style: none; }
 .day-dots i { width: 8px; height: 8px; border-radius: 50%; }
 .free-btn { border-style: dashed; }
 .icon-btn.edit { background: var(--surface2); color: var(--text); }
+
+/* ── confronto progressi ── */
+.up-ico { color: var(--green); margin-left: 3px; vertical-align: -2px; }
+.stat-row.three { grid-template-columns: repeat(3, 1fr); }
+.stat.col { display: flex; flex-direction: column; gap: 2px; padding: 12px; }
+.stat.col b { font-size: 19px; }
+.sum-list { gap: 0; padding: 4px 14px; }
+.sum-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.sum-row:last-child { border-bottom: 0; }
+.sum-row b { display: block; }
+.trend { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; flex: none; }
+.trend.up { background: #2dd36f22; color: var(--green); }
+.trend.pr { background: #f59e0b26; color: #fbbf24; }
+.trend.down { background: #ff5d5d22; color: var(--red); }
+.trend.flat { background: var(--surface3); color: var(--text-2); }
+.trend.new { background: var(--accent-dim); color: var(--accent); }
+.sum-prog { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 15px; }
+.sum-prog b { display: block; }
+.sum-pct { flex: none; font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; }
+.sum-pct.up { color: var(--green); } .sum-pct.down { color: var(--red); } .sum-pct.flat { color: var(--text-2); }
+.insight { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: var(--radius); background: linear-gradient(135deg, #2dd36f1c, var(--surface)); border: 1px solid #2dd36f55; line-height: 1.4; }
+.insight svg { flex: none; color: var(--green); margin-top: 2px; }

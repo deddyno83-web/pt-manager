@@ -3,10 +3,10 @@ import React, { useMemo, useState } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
-import { Trash2, ChevronDown, ChevronUp, Trophy } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Trophy, Sparkles } from 'lucide-react';
 import { useSessions } from '../session/SessionsContext';
 import {
-  trainedExercises, exerciseHistory, personalRecords, weeklyStats, sessionSets,
+  trainedExercises, exerciseHistory, personalRecords, weeklyStats, sessionSets, exerciseSummaries,
 } from './stats';
 import { fmtDate, fmtDuration, fmtVolume, fmtKg } from '../../core/format';
 
@@ -26,9 +26,70 @@ const tooltipStyle = {
   background: '#1a1e27', border: '1px solid #2a2f3a', borderRadius: 8, color: '#e8ebf2', fontSize: 13,
 };
 
-function ExerciseTab({ sessions }) {
+function SummaryTab({ sessions, onOpen }) {
+  const rows = useMemo(
+    () => exerciseSummaries(sessions).sort((a, b) => b.pct - a.pct || b.count - a.count),
+    [sessions]
+  );
+
+  const stats = useMemo(() => {
+    const now = Date.now();
+    const d30 = 30 * 86400000;
+    const recent = sessions.filter((s) => s.startedAt >= now - d30).length;
+    const before = sessions.filter((s) => s.startedAt < now - d30 && s.startedAt >= now - 2 * d30).length;
+    const compared = rows.filter((r) => r.prev);
+    return {
+      recent, before,
+      improved: compared.filter((r) => r.lastTrend === 1).length,
+      compared: compared.length,
+      best: rows.find((r) => r.count > 1 && r.pct > 0),
+    };
+  }, [sessions, rows]);
+
+  if (rows.length === 0) return <p className="muted pad">Completa il primo allenamento: qui vedrai cosa sta migliorando.</p>;
+
+  const diff = stats.recent - stats.before;
+  return (
+    <>
+      <div className="insight">
+        <Sparkles size={20} />
+        <div>
+          <b>Negli ultimi 30 giorni hai fatto {stats.recent} {stats.recent === 1 ? 'allenamento' : 'allenamenti'}</b>
+          {stats.before > 0 && (
+            <> ({diff === 0 ? 'come' : diff > 0 ? `${diff} in più rispetto a` : `${-diff} in meno rispetto a`} i 30 giorni prima)</>
+          )}
+          .{' '}
+          {stats.compared > 0 && <>Nell’ultimo allenamento sei migliorato in {stats.improved} esercizi su {stats.compared}. </>}
+          {stats.best && <>Il progresso più grande: <b>{stats.best.name}</b>, +{Math.round(stats.best.pct)}% dall’inizio.</>}
+        </div>
+      </div>
+
+      <h3 className="section-title">Esercizio per esercizio (dall’inizio a oggi)</h3>
+      {rows.map((r) => {
+        const trend = r.count < 2 ? 'flat' : r.pct > 0.5 ? 'up' : r.pct < -0.5 ? 'down' : 'flat';
+        return (
+          <button key={r.exerciseId} className="sum-prog" onClick={() => onOpen(r.exerciseId)}>
+            <span className="grow">
+              <b>{r.name}</b>
+              <small className="muted">
+                {r.count < 2
+                  ? `Prima sessione: ${fmtKg(r.last.maxWeight)}`
+                  : `${fmtKg(r.first.maxWeight)} → ${fmtKg(r.last.maxWeight)} · ${r.count} sessioni`}
+              </small>
+            </span>
+            <span className={`sum-pct ${trend}`}>
+              {r.count < 2 ? 'Nuovo' : `${r.pct > 0 ? '+' : ''}${Math.round(r.pct)}%`}
+            </span>
+          </button>
+        );
+      })}
+      <p className="muted small">La percentuale usa il massimale stimato (1RM): tiene conto sia del peso sia delle ripetizioni.</p>
+    </>
+  );
+}
+
+function ExerciseTab({ sessions, selected, onSelect: setSelected }) {
   const exercises = useMemo(() => trainedExercises(sessions), [sessions]);
-  const [selected, setSelected] = useState('');
   const [metric, setMetric] = useState('maxWeight');
   const [range, setRange] = useState('90');
 
@@ -172,19 +233,27 @@ function HistoryTab({ sessions, onRemove }) {
 
 export default function ProgressPage() {
   const { sessions, loading, removeSession } = useSessions();
-  const [tab, setTab] = useState('exercise');
+  const [tab, setTab] = useState('summary');
+  const [selected, setSelected] = useState('');
+
+  const openExercise = (id) => {
+    setSelected(id);
+    setTab('exercise');
+  };
 
   return (
     <div className="page">
       <header className="page-head"><h1>Progressi</h1></header>
       <div className="tabs">
-        <button className={tab === 'exercise' ? 'on' : ''} onClick={() => setTab('exercise')}>Esercizio</button>
+        <button className={tab === 'summary' ? 'on' : ''} onClick={() => setTab('summary')}>Riepilogo</button>
+        <button className={tab === 'exercise' ? 'on' : ''} onClick={() => setTab('exercise')}>Grafici</button>
         <button className={tab === 'volume' ? 'on' : ''} onClick={() => setTab('volume')}>Settimane</button>
         <button className={tab === 'history' ? 'on' : ''} onClick={() => setTab('history')}>Storico</button>
       </div>
       {loading ? <p className="muted pad">Caricamento…</p> : (
         <>
-          {tab === 'exercise' && <ExerciseTab sessions={sessions} />}
+          {tab === 'summary' && <SummaryTab sessions={sessions} onOpen={openExercise} />}
+          {tab === 'exercise' && <ExerciseTab sessions={sessions} selected={selected} onSelect={setSelected} />}
           {tab === 'volume' && <VolumeTab sessions={sessions} />}
           {tab === 'history' && <HistoryTab sessions={sessions} onRemove={removeSession} />}
         </>

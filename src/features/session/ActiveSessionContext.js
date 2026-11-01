@@ -131,7 +131,7 @@ export function ActiveSessionProvider({ children }) {
 
   const discard = useCallback(() => setActive(null), []);
 
-  // Salva solo le serie spuntate. Restituisce l'id, oppure null se non c'era niente da salvare.
+  // Salva solo le serie spuntate. Restituisce { id, session }, oppure null se non c'era niente da salvare.
   const finish = useCallback(async (notes = '') => {
     if (!active) return null;
     const exercises = active.exercises
@@ -167,7 +167,7 @@ export function ActiveSessionProvider({ children }) {
     session.volume = Math.round(sessionVolume(session));
     const id = saveSession(session);
     setActive(null);
-    return id;
+    return { id, session: { ...session, id } };
   }, [active, saveSession]);
 
   const value = useMemo(() => ({

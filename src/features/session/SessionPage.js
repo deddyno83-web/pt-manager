@@ -1,8 +1,11 @@
 // src/features/session/SessionPage.js
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Check, Plus, Trash2, Flag, Timer } from 'lucide-react';
+import { Check, Plus, Trash2, Flag, Timer, TrendingUp } from 'lucide-react';
 import { useActiveSession } from './ActiveSessionContext';
+import { useSessions } from './SessionsContext';
+import SessionSummary from './SessionSummary';
+import { sessionComparison, est1RM } from '../progress/stats';
 import { useTimer } from '../timer/TimerContext';
 import { usePrefs } from '../../core/PrefsContext';
 import ExercisePicker from '../exercises/ExercisePicker';
@@ -25,10 +28,13 @@ function SetRow({ index, set, onChange, onToggle, onRemove }) {
   const prev = set.prevWeight != null && set.prevWeight !== ''
     ? `${set.prevWeight}×${set.prevReps}`
     : '–';
+  // Freccia verde: la serie spuntata è migliore (1RM stimato più alto) di quella dell'ultima volta.
+  const better = set.done && set.prevWeight != null && set.prevWeight !== ''
+    && est1RM(Number(set.weight), Number(set.reps)) > est1RM(Number(set.prevWeight), Number(set.prevReps));
   return (
     <div className={`set-row ${set.done ? 'done' : ''}`}>
       <span className="set-n">{index + 1}</span>
-      <span className="set-prev muted">{prev}</span>
+      <span className="set-prev muted">{prev}{better && <TrendingUp size={13} className="up-ico" aria-label="Meglio dell'ultima volta" />}</span>
       <input
         className="input num"
         inputMode="decimal"
@@ -61,6 +67,12 @@ export default function SessionPage() {
   const { prefs } = usePrefs();
   const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(null); // riepilogo mostrato dopo "Termina"
+  const { sessions } = useSessions();
+
+  if (done) {
+    return <SessionSummary session={done.session} summary={done.summary} onClose={() => nav('/progressi')} />;
+  }
 
   if (!active) {
     return (
@@ -92,11 +104,13 @@ export default function SessionPage() {
       nav('/');
       return;
     }
-    if (doneCount < totalCount && !window.confirm(`Hai completato ${doneCount} serie su ${totalCount}. Terminare e salvare?`)) return;
+    if (doneCount < totalCount && !window.confirm(`Hai spuntato ${doneCount} serie su ${totalCount}. Le serie non spuntate non vengono salvate. Terminare?`)) return;
     setSaving(true);
     timer.reset();
-    await finish();
-    nav('/progressi');
+    const history = sessions; // storico PRIMA di questa sessione: serve per il confronto
+    const res = await finish();
+    if (res) setDone({ session: res.session, summary: sessionComparison(res.session, history) });
+    else nav('/');
   };
 
   const abandon = () => {

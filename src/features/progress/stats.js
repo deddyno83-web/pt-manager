@@ -89,3 +89,53 @@ export function weeklyStats(sessions, weeks = 12) {
   });
   return buckets;
 }
+
+// ── Confronti "a parole": cosa è migliorato ─────────────────────────────────────
+
+// Punteggio di un esercizio in una sessione: 1RM stimato; se è a corpo libero (peso 0) il volume.
+const score = (h) => (h.best1RM > 0 ? h.best1RM : h.volume);
+
+// Per ogni esercizio: primo dato, ultimo dato, penultimo, e di quanto è cambiato.
+export function exerciseSummaries(sessions) {
+  return trainedExercises(sessions).map(({ exerciseId, name, count }) => {
+    const h = exerciseHistory(sessions, exerciseId);
+    const first = h[0];
+    const last = h[h.length - 1];
+    const prev = h.length > 1 ? h[h.length - 2] : null;
+    const pct = h.length > 1 && score(first) > 0 ? ((score(last) - score(first)) / score(first)) * 100 : 0;
+    return {
+      exerciseId, name, count, first, last, prev,
+      pct,
+      deltaKg: last.maxWeight - first.maxWeight,
+      lastTrend: prev ? Math.sign(Math.round((score(last) - score(prev)) * 10) / 10) : 0, // +1 / 0 / -1
+    };
+  });
+}
+
+// Confronta una sessione appena finita con lo storico precedente.
+export function sessionComparison(session, previousSessions) {
+  const exercises = session.exercises.map((ex) => {
+    const past = exerciseHistory(previousSessions, ex.exerciseId);
+    const now = exerciseHistory([session], ex.exerciseId)[0];
+    const prev = past[past.length - 1] || null;
+    const bestBefore = past.reduce((m, p) => Math.max(m, score(p)), 0);
+    return {
+      exerciseId: ex.exerciseId,
+      name: ex.name,
+      maxWeight: now.maxWeight,
+      prevMaxWeight: prev ? prev.maxWeight : null,
+      deltaKg: prev ? Math.round((now.maxWeight - prev.maxWeight) * 10) / 10 : null,
+      trend: prev ? Math.sign(Math.round((score(now) - score(prev)) * 10) / 10) : null,
+      isFirst: !prev,
+      isPR: !!prev && score(now) > bestBefore,
+    };
+  });
+  const lastSame = previousSessions.find((s) => s.presetId && s.presetId === session.presetId);
+  return {
+    exercises,
+    volume: session.volume,
+    prevVolume: lastSame ? lastSame.volume : null,
+    prs: exercises.filter((e) => e.isPR).length,
+    better: exercises.filter((e) => e.trend === 1).length,
+  };
+}
