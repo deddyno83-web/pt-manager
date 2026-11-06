@@ -21,12 +21,18 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; }
+/* Pagina fissa: niente zoom (pizzico / doppio tap) e niente scorrimento del documento.
+   Scorre solo .main; così le barre in basso non si spostano mai. */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+html, body { position: fixed; inset: 0; width: 100%; overflow: hidden; }
 body {
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
   background: var(--bg); color: var(--text); font-size: 15px;
   -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
 }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+/* iOS zooma da solo sui campi con testo sotto i 16px: tenerli a 16px evita lo zoom al tocco. */
+input, select, textarea { font-size: 16px; }
 button { cursor: pointer; background: none; border: 0; }
 h1 { font-size: 26px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; }
 h2 { font-size: 20px; font-weight: 800; letter-spacing: -.015em; }
@@ -93,7 +99,7 @@ ul, ol { list-style: none; }
 /* ── form ── */
 .input, .modal select {
   width: 100%; padding: 12px 14px; border-radius: 12px; background: var(--surface2);
-  border: 1px solid var(--border); outline: none; font-size: 15px;
+  border: 1px solid var(--border); outline: none; font-size: 16px;
 }
 .input:focus { border-color: var(--accent); }
 .input.num { text-align: center; padding: 10px 4px; font-weight: 700; font-size: 17px; }
@@ -121,7 +127,7 @@ ul, ol { list-style: none; }
 .empty { text-align: center; padding: 34px 16px; display: flex; flex-direction: column; gap: 12px; align-items: center; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); }
 
 /* ── modal ── */
-.modal-backdrop { position: fixed; top: 0; left: 0; right: 0; height: 100vh; height: 100dvh; height: var(--app-h, 100dvh); background: #000b; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+.modal-backdrop { position: fixed; top: var(--app-top, 0px); left: 0; right: 0; height: 100vh; height: 100dvh; height: var(--app-h, 100dvh); background: #000b; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
 .modal { background: var(--bg); width: 100%; max-width: 720px; height: 90vh; height: 90dvh; max-height: 100%; border-radius: 22px 22px 0 0; display: flex; flex-direction: column; border: 1px solid var(--border); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
